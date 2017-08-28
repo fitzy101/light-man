@@ -1,5 +1,5 @@
 # light-man
-This is a basic CLI tool for basic node management on a lighthouse instance. The source is written in Go, specifically version 1.8, however I imagine it could be compiled on much earlier versions. The only external dependency is golang.org/x/crypto/ssh which it uses for the ssh shell passthrough.
+This is a CLI tool for basic node management on a lighthouse instance. The source is written in Go, specifically version 1.8, however I imagine it could be compiled on much earlier versions. The only external dependency is golang.org/x/crypto/ssh which it uses for the ssh shell passthrough.
 
 Currently implemented are the following commands:
 
