@@ -30,6 +30,7 @@ Receiving objects: 100% (5/5), 5.70 KiB | 0 bytes/s, done.
 Checking connectivity... done.
 $ cd light-man
 $ make
+go get ./...
 go build  -o light-man main.go
 chmod +x light-man
 $ ./light-man -c list
@@ -120,6 +121,8 @@ Connect to port > ^CShell session completed
 - Implement 'approve' to approve a node.
 - Implement filtering on the list command.
 - Persist session tokens until they've timed out.
+- Add support for smart groups in the list command.
+- Add support for third party nodes in the add command.
  
 ## Known issues
 Please report any issues that you come across.
