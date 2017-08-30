@@ -1,5 +1,6 @@
 # light-man
-This is a CLI tool for basic node management on a lighthouse instance. The source is written in Go, specifically version 1.8, however I imagine it could be compiled on much earlier versions. The only external dependency is golang.org/x/crypto/ssh which it uses for the ssh shell passthrough.
+
+This is a CLI tool for basic node management on a lighthouse instance. The source is written in Go, specifically version 1.8, however I imagine it could be compiled on much earlier versions. The only external dependency is `golang.org/x/crypto/ssh` which it uses for the ssh shell passthrough.
 
 Currently implemented are the following commands:
 
@@ -16,7 +17,8 @@ All username and password fields will default to root & default respectively if 
 Latest version v0.1.0.
 
 # Building light-man
-Clone the git repo. Navigate to the repo, and run `make`. Copy the binary to somewhere in your $PATH. You'll need Go installed and your $GOPATH setup correctly to compile.
+Clone the git repo. Navigate to the repo, and run `make`. Copy the binary to somewhere in your $PATH. 
+You'll need Go installed and your $GOPATH setup correctly to compile.
 
 ```
 $ git clone git@github.com:fitzy101/light-man.git
