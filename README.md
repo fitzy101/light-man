@@ -18,7 +18,7 @@ Latest version v0.1.0.
 
 # Building light-man
 Clone the git repo. Navigate to the repo, and run `make`. Copy the binary to somewhere in your $PATH. 
-You'll need Go installed and your $GOPATH setup correctly to compile.
+You'll [need Go installed](https://golang.org/doc/install) and your $GOPATH setup correctly to compile.
 
 ```
 $ git clone git@github.com:fitzy101/light-man.git
