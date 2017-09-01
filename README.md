@@ -122,7 +122,6 @@ Connect to port > ^CShell session completed
 - Implement 'approve' to approve a node.
 - Implement filtering on the list command.
 - Persist session tokens until they've timed out.
-- Add support for smart groups in the list command.
 - Add support for third party nodes in the add command.
  
 ## Known issues
