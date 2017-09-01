@@ -14,7 +14,7 @@ shell - gives you a pmshell connection on the lighthouse.
 
 All username and password fields will default to root & default respectively if there were not specified in the command. If you try to run any commands before configuring light-man you'll be prompted to run configure first. This only needs to happen once if the lighthouse URL stays the same.
 
-Latest version v0.1.0.
+Latest version v0.1.1.
 
 # Building light-man
 Clone the git repo. Navigate to the repo, and run `make`. Copy the binary to somewhere in your $PATH. 
@@ -54,6 +54,7 @@ Usage: light-man -c [COMMAND] [OPTIONS]...
                 -n: name of the node to add
                 -no: indicates the node should NOT be auto-approved on enrollment
         list: list all nodes on the Lighthouse
+                -g: the name of a smartgroup to filter the list command
         delete: delete a node from the Lighthouse
                 -i: the identifier for a node - find with the list command
         shell: get a port manager shell on the Lighthouse

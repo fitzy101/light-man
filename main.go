@@ -23,6 +23,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"os/user"
@@ -41,13 +42,14 @@ var (
 	lhpassword string
 
 	// Console Server vars.
-	address  string
-	username string
-	password string
-	name     string
-	bundle   string
-	noauto   bool
-	id       string
+	address    string
+	username   string
+	password   string
+	name       string
+	bundle     string
+	noauto     bool
+	id         string
+	smartgroup string
 
 	// Housekeeping vars.
 	command   string
@@ -55,21 +57,24 @@ var (
 )
 
 const (
-	dcommand  = "the command to run with light-man"
-	daddress  = "URL of the Lighthouse instance"
-	dnaddress = "FQDN or IP Address of the node"
-	dusername = "user name for a Lighthouse user (default is 'root')"
-	dpassword = "password for the Lighthouse user (default is 'default')"
-	dname     = "name of the node to add"
-	dbundle   = "name of the enrollment bundle"
-	dauto     = "indicates the node should NOT be auto-approved on enrollment"
-	did       = "the identifier for a node - find with the list command"
+	dcommand    = "the command to run with light-man"
+	daddress    = "URL of the Lighthouse instance"
+	dnaddress   = "FQDN or IP Address of the node"
+	dusername   = "user name for a Lighthouse user (default is 'root')"
+	dpassword   = "password for the Lighthouse user (default is 'default')"
+	dname       = "name of the node to add"
+	dbundle     = "name of the enrollment bundle"
+	dauto       = "indicates the node should NOT be auto-approved on enrollment"
+	did         = "the identifier for a node - find with the list command"
+	dsmartgroup = "the name of a smartgroup to filter the list command"
 
 	version    = "/api/v1"
 	yamlSpace  = "  "
 	configfile = ".oglh"
 	sessionURI = "/sessions"
 	nodeURI    = "/nodes"
+	searchURI  = "/search/nodes"
+	sgURI      = "/nodes/smartgroups"
 
 	sshPort = 22
 	sshConn = "tcp"
@@ -83,6 +88,7 @@ func init() {
 	flag.StringVar(&name, "n", "", dname)
 	flag.StringVar(&bundle, "b", "", dbundle)
 	flag.StringVar(&id, "i", "", did)
+	flag.StringVar(&smartgroup, "g", "", dsmartgroup)
 	flag.BoolVar(&noauto, "no", false, dauto)
 }
 
@@ -104,8 +110,8 @@ func usage() string {
 	//sbuff.WriteString(fmt.Sprintf("\t\t-b: %s\n", dbundle)) // Not implemented
 	sbuff.WriteString(fmt.Sprintf("\t\t-no: %s\n", dauto))
 	sbuff.WriteString("\tlist: list all nodes on the Lighthouse\n")
-	// TODO implement filtering by node status.
-	// sbuff.WriteString(fmt.Sprintf("\t\t-s: %s\n", dlist))
+	sbuff.WriteString(fmt.Sprintf("\t\t-g: %s\n", dsmartgroup))
+	// sbuff.WriteString(fmt.Sprintf("\t\t-s: %s\n", dlist)) // Not implemented
 
 	sbuff.WriteString("\tdelete: delete a node from the Lighthouse\n")
 	sbuff.WriteString(fmt.Sprintf("\t\t-i: %s\n", did))
@@ -335,10 +341,32 @@ func setAuthHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 }
 
-// getURL returns a formatted URL from the lhaddress in config.
+// passed to the getURL function if query params are needed.
+type parameters struct {
+	name  string
+	value string
+}
+
+// getURL returns a formatted and percent encoded URL from the lhaddress in config.
 // Expects that version, and uri start with / and do not end with a /.
-func getURL(uri string) string {
-	return fmt.Sprintf("%s%s%s", lhaddress, version, uri)
+func getURL(uri string, params ...parameters) (string, error) {
+	var ret string
+	lhuri := fmt.Sprintf("%s%s%s", lhaddress, version, uri)
+	lhurl, err := url.Parse(lhuri)
+	if err != nil {
+		return ret, err
+	}
+
+	// If any params were included, append them to the url.
+	if len(params) > 0 {
+		p := url.Values{}
+		for _, param := range params {
+			p.Add(param.name, param.value)
+		}
+		lhurl.RawQuery = p.Encode()
+	}
+	ret = lhurl.String()
+	return ret, nil
 }
 
 // httpClient returns an http client. Seperated so we can modify the client
@@ -372,7 +400,11 @@ func getToken() (string, error) {
 	if err != nil {
 		return ret, err
 	}
-	url := getURL(sessionURI)
+	url, err := getURL(sessionURI)
+	if err != nil {
+		return ret, err
+	}
+
 	req, err := buildReq(&body, url, http.MethodPost, false)
 	if err != nil {
 		return ret, err
@@ -480,7 +512,10 @@ func addNode(address, username, password, name, bundle string, approve bool) (st
 	if err != nil {
 		return ret, err
 	}
-	url := getURL(nodeURI)
+	url, err := getURL(nodeURI)
+	if err != nil {
+		return ret, err
+	}
 
 	// Make the POST request.
 	req, err := buildReq(&reqJSON, url, http.MethodPost, true)
@@ -488,8 +523,8 @@ func addNode(address, username, password, name, bundle string, approve bool) (st
 	if err != nil {
 		return ret, err
 	}
-	defer rawResp.Body.Close()
-	if err := checkErr(rawResp); err != nil {
+	_, err = parseReq(rawResp)
+	if err != nil {
 		return ret, err
 	}
 
@@ -497,7 +532,6 @@ func addNode(address, username, password, name, bundle string, approve bool) (st
 }
 
 // listNodes retrieves information for all nodes on the lighthouse.
-// TODO: implement status, id, name filtering.
 func listNodes() (string, error) {
 	var ret string
 	type NodeRuntimeStatus struct {
@@ -520,19 +554,37 @@ func listNodes() (string, error) {
 		Nodes []NodesListBody `json:"nodes"`
 	}
 
+	// If a smartgroup name was specified, we need to perform a search first
+	// and append it onto the URI.
+	var url string
+	var err error
+	if smartgroup != "" {
+		searchID, err := getSearchID()
+		if err != nil {
+			return ret, err
+		}
+		searchQ := parameters{
+			name:  "searchId",
+			value: searchID,
+		}
+		url, err = getURL(nodeURI, searchQ)
+		if err != nil {
+			return ret, err
+		}
+	} else {
+		url, err = getURL(nodeURI)
+		if err != nil {
+			return ret, err
+		}
+	}
+
 	// Make the request
-	url := getURL(nodeURI)
 	req, err := buildReq(nil, url, http.MethodGet, true)
 	rawResp, err := httpClient().Do(req)
 	if err != nil {
 		return ret, err
 	}
-	defer rawResp.Body.Close()
-
-	if err := checkErr(rawResp); err != nil {
-		return ret, err
-	}
-	body, err := ioutil.ReadAll(rawResp.Body)
+	body, err := parseReq(rawResp)
 	if err != nil {
 		return ret, err
 	}
@@ -573,15 +625,17 @@ func deleteNode() (string, error) {
 
 	// Make the request.
 	uri := fmt.Sprintf("%s/%s", nodeURI, id)
-	url := getURL(uri)
+	url, err := getURL(uri)
+	if err != nil {
+		return ret, err
+	}
 	req, err := buildReq(nil, url, http.MethodDelete, true)
 	rawResp, err := httpClient().Do(req)
 	if err != nil {
 		return ret, err
 	}
-	if err := checkErr(rawResp); err != nil {
+	if _, err := parseReq(rawResp); err != nil {
 		return ret, err
-
 	}
 
 	// Confirm the node was deleted.
@@ -664,6 +718,103 @@ func getShell() (string, error) {
 	// Now we can run the pmshell command
 	ret = "Shell session completed\n"
 	session.Run("pmshell")
+	return ret, nil
+}
+
+// getSearchID returns a searchID for a specified smartgroup.
+func getSearchID() (string, error) {
+	// Unfortunately there isn't a GET smartgroup by name endpoint, so we
+	// need to enumerate them all to find the one we want.
+	var ret string
+
+	type SmartgroupListBody struct {
+		ID    string `json:"id"`
+		Name  string `json:"name"`
+		Query string `json:"query"`
+	}
+	type NodesSmartgroupResponse struct {
+		Smartgroups []SmartgroupListBody `json:"smartgroups"`
+	}
+
+	// Fetch all of the smart groups.
+	url, err := getURL(sgURI)
+	if err != nil {
+		return ret, err
+	}
+	req, err := buildReq(nil, url, http.MethodGet, true)
+	rawResp, err := httpClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := parseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+	var b NodesSmartgroupResponse
+	err = json.Unmarshal(body, &b)
+	if err != nil {
+		return ret, err
+	}
+
+	// Now we need to find the smartgroupID, and from that the query.
+	var query string
+	for _, sg := range b.Smartgroups {
+		if strings.Compare(sg.Name, smartgroup) == 0 {
+			query = sg.Query
+		}
+	}
+	if query == "" {
+		return ret, nil
+	}
+
+	// Finally we can get a searchID.
+	type SearchBody struct {
+		ID string `json:"id"`
+	}
+	type SearchResponse struct {
+		SearchIDs SearchBody `json:"search"`
+	}
+	param := parameters{
+		name:  "json",
+		value: query,
+	}
+	url, err = getURL(searchURI, param)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err = buildReq(nil, url, http.MethodGet, true)
+	rawResp, err = httpClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err = parseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	var bsearch SearchResponse
+	err = json.Unmarshal(body, &bsearch)
+	if err != nil {
+		return ret, err
+	}
+	ret = bsearch.SearchIDs.ID
+
+	return ret, nil
+}
+
+// parseReq wraps checkErr and the reading of the body.
+func parseReq(resp *http.Response) ([]byte, error) {
+	defer resp.Body.Close()
+	var ret []byte
+	if err := checkErr(resp); err != nil {
+		return ret, err
+	}
+
+	ret, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return ret, err
+	}
 	return ret, nil
 }
 
