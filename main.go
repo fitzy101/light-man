@@ -5,33 +5,25 @@
 // Written with go 1.8, however would probably run on earlier versions.
 // To compile, navigate to the source folder and type 'make'. You'll need to
 // install the dependencies with `go get ./...`.
-//
-// TODO:
-// - Implement filtering for the list command.
-// - Implement an 'approve' command.
-// - Refactor into seperate files for easier maintenance/reading.
 package main
 
 import (
 	"bufio"
 	"bytes"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"os/user"
 	"regexp"
 	"strings"
 	"text/tabwriter"
-	"time"
 
+	"github.com/fitzy101/light-man/client"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -68,10 +60,8 @@ const (
 	did         = "the identifier for a node - find with the list command"
 	dsmartgroup = "the name of a smartgroup to filter the list command"
 
-	version    = "/api/v1"
 	yamlSpace  = "  "
 	configfile = ".oglh"
-	sessionURI = "/sessions"
 	nodeURI    = "/nodes"
 	searchURI  = "/search/nodes"
 	sgURI      = "/nodes/smartgroups"
@@ -96,28 +86,30 @@ func usage() string {
 	var sbuff bytes.Buffer
 	sbuff.WriteString("Usage: light-man -c [COMMAND] [OPTIONS]...\n")
 
-	// configure command
+	// configure
 	sbuff.WriteString("\tconfigure: set up light-man with your Lighthouse credentials\n")
 	sbuff.WriteString(fmt.Sprintf("\t\t-a: %s\n", daddress))
 	sbuff.WriteString(fmt.Sprintf("\t\t-u: %s\n", dusername))
 	sbuff.WriteString(fmt.Sprintf("\t\t-p: %s\n", dpassword))
 
+	// add
 	sbuff.WriteString("\tadd: add a new node to the Lighthouse\n")
 	sbuff.WriteString(fmt.Sprintf("\t\t-a: %s\n", dnaddress))
 	sbuff.WriteString(fmt.Sprintf("\t\t-u: %s\n", dusername))
 	sbuff.WriteString(fmt.Sprintf("\t\t-p: %s\n", dpassword))
 	sbuff.WriteString(fmt.Sprintf("\t\t-n: %s\n", dname))
-	//sbuff.WriteString(fmt.Sprintf("\t\t-b: %s\n", dbundle)) // Not implemented
 	sbuff.WriteString(fmt.Sprintf("\t\t-no: %s\n", dauto))
+
+	// list
 	sbuff.WriteString("\tlist: list all nodes on the Lighthouse\n")
 	sbuff.WriteString(fmt.Sprintf("\t\t-g: %s\n", dsmartgroup))
-	// sbuff.WriteString(fmt.Sprintf("\t\t-s: %s\n", dlist)) // Not implemented
 
+	// delete
 	sbuff.WriteString("\tdelete: delete a node from the Lighthouse\n")
 	sbuff.WriteString(fmt.Sprintf("\t\t-i: %s\n", did))
 
+	// shell
 	sbuff.WriteString("\tshell: get a port manager shell on the Lighthouse\n")
-
 	return sbuff.String()
 }
 
@@ -149,6 +141,7 @@ func main() {
 	}
 	exitSuccess(msg)
 }
+
 func runCommand(command string) (string, error) {
 	var msg string
 	switch command {
@@ -320,6 +313,12 @@ func loadConfiguration() error {
 			lhpassword = fields[1]
 		}
 	}
+
+	// Setup the client package with the user data.
+	client.LhAddress = lhaddress
+	client.LhUsername = lhusername
+	client.LhPassword = lhpassword
+
 	return nil
 }
 
@@ -329,146 +328,10 @@ func exitSuccess(msg string) {
 	w.Flush()
 	os.Exit(0)
 }
+
 func exitErr(err string) {
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(1)
-}
-
-// getAuthHeaders returns the headers required for an authenticated
-// request to the lighthouse.
-func setAuthHeaders(req *http.Request) {
-	req.Header.Set("Authorization", fmt.Sprintf("Token %s", authToken))
-	req.Header.Set("Content-Type", "application/json")
-}
-
-// passed to the getURL function if query params are needed.
-type parameters struct {
-	name  string
-	value string
-}
-
-// getURL returns a formatted and percent encoded URL from the lhaddress in config.
-// Expects that version, and uri start with / and do not end with a /.
-func getURL(uri string, params ...parameters) (string, error) {
-	var ret string
-	lhuri := fmt.Sprintf("%s%s%s", lhaddress, version, uri)
-	lhurl, err := url.Parse(lhuri)
-	if err != nil {
-		return ret, err
-	}
-
-	// If any params were included, append them to the url.
-	if len(params) > 0 {
-		p := url.Values{}
-		for _, param := range params {
-			p.Add(param.name, param.value)
-		}
-		lhurl.RawQuery = p.Encode()
-	}
-	ret = lhurl.String()
-	return ret, nil
-}
-
-// httpClient returns an http client. Seperated so we can modify the client
-// if we need to.
-func httpClient() *http.Client {
-	// Ignore client certificate errors.
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-	}
-	return &http.Client{
-		Timeout:   20 * time.Second,
-		Transport: tr,
-	}
-}
-
-// getToken logs into the lighthouse instance and creates an Auth token for
-// subsequent requests.
-func getToken() (string, error) {
-	var ret string
-	type AuthReq struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-	bodyRaw := AuthReq{
-		Username: lhusername,
-		Password: lhpassword,
-	}
-	body, err := json.Marshal(bodyRaw)
-	if err != nil {
-		return ret, err
-	}
-	url, err := getURL(sessionURI)
-	if err != nil {
-		return ret, err
-	}
-
-	req, err := buildReq(&body, url, http.MethodPost, false)
-	if err != nil {
-		return ret, err
-	}
-
-	rawResp, err := httpClient().Do(req)
-	if err != nil {
-		return ret, err
-	}
-	defer rawResp.Body.Close()
-	if err := checkErr(rawResp); err != nil {
-		return ret, err
-	}
-
-	type AuthResp struct {
-		State   string `json:"state"`
-		Session string `json:"session"`
-		User    string `json:"user"`
-	}
-	respJSON, err := ioutil.ReadAll(rawResp.Body)
-	if err != nil {
-		return ret, err
-	}
-
-	var b AuthResp
-	if err := json.Unmarshal(respJSON, &b); err != nil {
-		return ret, err
-	}
-
-	if b.Session != "" && b.State == "authenticated" {
-		ret = b.Session
-	} else {
-		return ret, errors.New("Error creating authentication token")
-	}
-	return ret, nil
-}
-
-// buildReq is a wrapper around the http.NewRequest function that ensures
-// authenticated requests have the expected auth headers.
-func buildReq(body *[]byte, url string, method string, auth bool) (*http.Request, error) {
-	var req *http.Request
-	var err error
-	if body != nil {
-		bod := bytes.NewBuffer(*body)
-		req, err = http.NewRequest(method, url, bod)
-	} else {
-		req, err = http.NewRequest(method, url, nil)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if auth {
-		// We need a token before setting the headers.
-		if authToken == "" {
-			token, err := getToken()
-			if err != nil {
-				return nil, err
-			}
-			authToken = token
-		}
-		setAuthHeaders(req)
-	}
-	req.Close = true
-	return req, nil
 }
 
 // addNode makes a POST request to the lighthouse including all of the new
@@ -512,18 +375,18 @@ func addNode(address, username, password, name, bundle string, approve bool) (st
 	if err != nil {
 		return ret, err
 	}
-	url, err := getURL(nodeURI)
+	url, err := client.GetURL(nodeURI)
 	if err != nil {
 		return ret, err
 	}
 
 	// Make the POST request.
-	req, err := buildReq(&reqJSON, url, http.MethodPost, true)
-	rawResp, err := httpClient().Do(req)
+	req, err := client.BuildReq(&reqJSON, url, http.MethodPost, true)
+	rawResp, err := client.HttpClient().Do(req)
 	if err != nil {
 		return ret, err
 	}
-	_, err = parseReq(rawResp)
+	_, err = client.ParseReq(rawResp)
 	if err != nil {
 		return ret, err
 	}
@@ -563,28 +426,28 @@ func listNodes() (string, error) {
 		if err != nil {
 			return ret, err
 		}
-		searchQ := parameters{
-			name:  "searchId",
-			value: searchID,
+		searchQ := client.Parameters{
+			Name:  "searchId",
+			Value: searchID,
 		}
-		url, err = getURL(nodeURI, searchQ)
+		url, err = client.GetURL(nodeURI, searchQ)
 		if err != nil {
 			return ret, err
 		}
 	} else {
-		url, err = getURL(nodeURI)
+		url, err = client.GetURL(nodeURI)
 		if err != nil {
 			return ret, err
 		}
 	}
 
 	// Make the request
-	req, err := buildReq(nil, url, http.MethodGet, true)
-	rawResp, err := httpClient().Do(req)
+	req, err := client.BuildReq(nil, url, http.MethodGet, true)
+	rawResp, err := client.HttpClient().Do(req)
 	if err != nil {
 		return ret, err
 	}
-	body, err := parseReq(rawResp)
+	body, err := client.ParseReq(rawResp)
 	if err != nil {
 		return ret, err
 	}
@@ -625,16 +488,16 @@ func deleteNode() (string, error) {
 
 	// Make the request.
 	uri := fmt.Sprintf("%s/%s", nodeURI, id)
-	url, err := getURL(uri)
+	url, err := client.GetURL(uri)
 	if err != nil {
 		return ret, err
 	}
-	req, err := buildReq(nil, url, http.MethodDelete, true)
-	rawResp, err := httpClient().Do(req)
+	req, err := client.BuildReq(nil, url, http.MethodDelete, true)
+	rawResp, err := client.HttpClient().Do(req)
 	if err != nil {
 		return ret, err
 	}
-	if _, err := parseReq(rawResp); err != nil {
+	if _, err := client.ParseReq(rawResp); err != nil {
 		return ret, err
 	}
 
@@ -737,16 +600,16 @@ func getSearchID() (string, error) {
 	}
 
 	// Fetch all of the smart groups.
-	url, err := getURL(sgURI)
+	url, err := client.GetURL(sgURI)
 	if err != nil {
 		return ret, err
 	}
-	req, err := buildReq(nil, url, http.MethodGet, true)
-	rawResp, err := httpClient().Do(req)
+	req, err := client.BuildReq(nil, url, http.MethodGet, true)
+	rawResp, err := client.HttpClient().Do(req)
 	if err != nil {
 		return ret, err
 	}
-	body, err := parseReq(rawResp)
+	body, err := client.ParseReq(rawResp)
 	if err != nil {
 		return ret, err
 	}
@@ -774,21 +637,21 @@ func getSearchID() (string, error) {
 	type SearchResponse struct {
 		SearchIDs SearchBody `json:"search"`
 	}
-	param := parameters{
-		name:  "json",
-		value: query,
+	param := client.Parameters{
+		Name:  "json",
+		Value: query,
 	}
-	url, err = getURL(searchURI, param)
+	url, err = client.GetURL(searchURI, param)
 	if err != nil {
 		return ret, err
 	}
 
-	req, err = buildReq(nil, url, http.MethodGet, true)
-	rawResp, err = httpClient().Do(req)
+	req, err = client.BuildReq(nil, url, http.MethodGet, true)
+	rawResp, err = client.HttpClient().Do(req)
 	if err != nil {
 		return ret, err
 	}
-	body, err = parseReq(rawResp)
+	body, err = client.ParseReq(rawResp)
 	if err != nil {
 		return ret, err
 	}
@@ -801,36 +664,4 @@ func getSearchID() (string, error) {
 	ret = bsearch.SearchIDs.ID
 
 	return ret, nil
-}
-
-// parseReq wraps checkErr and the reading of the body.
-func parseReq(resp *http.Response) ([]byte, error) {
-	defer resp.Body.Close()
-	var ret []byte
-	if err := checkErr(resp); err != nil {
-		return ret, err
-	}
-
-	ret, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return ret, err
-	}
-	return ret, nil
-}
-
-// checkErr returns a friendly error message for the given status code.
-func checkErr(resp *http.Response) error {
-	switch resp.StatusCode {
-	case http.StatusBadRequest:
-		return errors.New("Invalid options provided")
-	case http.StatusUnauthorized:
-		return errors.New("Not authorized to do that")
-	case http.StatusForbidden:
-		return errors.New("Forbidden from accessing that resource")
-	case http.StatusNotFound:
-		return errors.New("Invalid node ID")
-	case http.StatusInternalServerError:
-		return errors.New("Internal error performing action")
-	}
-	return nil
 }
