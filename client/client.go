@@ -24,6 +24,90 @@ const (
 	version    = "/api/v1"
 )
 
+// Client is an interface with the idea of wrapping an http.Client with extra
+// functionality.
+type Client interface {
+	Do(r *http.Request) (*http.Response, error)
+}
+
+// Decorator wraps a Client with extra behaviour.
+// Inspired by Tomas Senart (https://www.youtube.com/watch?v=xyDkyFjzFVc)
+type Decorator func(Client) Client
+
+// ClientFunc is the implementation of the Client interface.
+type ClientFunc func(*http.Request) (*http.Response, error)
+
+// Do performs the http request.
+func (f ClientFunc) Do(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+// Decorate takes a Client and wraps it with the provided decorators.
+func Decorate(c Client, d ...Decorator) Client {
+	dec := c
+	for _, decFunc := range d {
+		dec = decFunc(dec)
+	}
+	return dec
+}
+
+// Retry is a will retry an http request up to 'attempts' number of times,
+// gradually increasing the retry wait time the more failed attempts.
+func Retry(attempts int, backoff time.Duration) Decorator {
+	return func(c Client) Client {
+		return ClientFunc(func(r *http.Request) (res *http.Response, err error) {
+			for i := 0; i <= attempts; i++ {
+				if res, err = c.Do(r); err == nil {
+					break
+				}
+				// We'll try again in a bit.
+				time.Sleep(backoff * time.Duration(i))
+			}
+			return res, err
+		})
+	}
+}
+
+// IgnoreTlsErr is a that will prevent http client certificate errors when
+// making an http request with a self-signed cert.
+func IgnoreTlsErr() Decorator {
+	return func(c Client) Client {
+		// Ignore client certificate errors.
+		if httpClient, ok := c.(*http.Client); ok {
+			httpClient.Transport = &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			}
+		}
+		return ClientFunc(func(r *http.Request) (*http.Response, error) {
+			return c.Do(r)
+		})
+	}
+}
+
+//// Retry authorization if the endpoint returns Unauthorized - this might happen
+//// if out saved session token has expired.
+//func RetryAuth() Decorator {
+//	return func(c Client) Client {
+//		return ClientFunc(func(r *http.Request) (*http.Response, error) {
+//			if res, err := c.Do(r); res.StatusCode == http.StatusUnauthorized {
+//				// Get another token, this one has expired.
+//			}
+//			return c.Do(r)
+//		})
+//	}
+//}
+
+// HttpClient returns a decorated http client.
+func HttpClient() Client {
+	return Decorate(http.DefaultClient,
+		// RetryAuth() - to implement
+		IgnoreTlsErr(),
+		Retry(5, time.Second),
+	)
+}
+
 // Parameters can be passed to the getURL function if query params are needed.
 // These will be added and the percent-encoded URL will be returned.
 type Parameters struct {
@@ -51,28 +135,6 @@ func GetURL(uri string, params ...Parameters) (string, error) {
 	}
 	ret = lhurl.String()
 	return ret, nil
-}
-
-// setAuthHeaders returns the headers required for an authenticated
-// request to the lighthouse.
-func setAuthHeaders(req *http.Request) {
-	req.Header.Set("Authorization", fmt.Sprintf("Token %s", authToken))
-	req.Header.Set("Content-Type", "application/json")
-}
-
-// HttpClient returns an http client. Seperated so we can modify the client
-// if we need to.
-func HttpClient() *http.Client {
-	// Ignore client certificate errors.
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true,
-		},
-	}
-	return &http.Client{
-		Timeout:   20 * time.Second,
-		Transport: tr,
-	}
 }
 
 // getToken logs into the lighthouse instance and creates an Auth token for
@@ -161,6 +223,13 @@ func BuildReq(body *[]byte, url string, method string, auth bool) (*http.Request
 	}
 	req.Close = true
 	return req, nil
+}
+
+// setAuthHeaders adds the headers for a given request.
+func setAuthHeaders(r *http.Request) {
+	r.Header.Set("Authorization", fmt.Sprintf("Token %s", authToken))
+	r.Header.Set("Content-Type", "application/json")
+	return
 }
 
 // ParseReq checks error codes, and returns the body of a successful request.
