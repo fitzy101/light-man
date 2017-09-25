@@ -237,6 +237,8 @@ func ParseReq(resp *http.Response) ([]byte, error) {
 	defer resp.Body.Close()
 	var ret []byte
 	if err := checkErr(resp); err != nil {
+		// Read the error body to return a nicer error to the user.
+		err = parseErr(resp, err)
 		return ret, err
 	}
 
@@ -245,6 +247,50 @@ func ParseReq(resp *http.Response) ([]byte, error) {
 		return ret, err
 	}
 	return ret, nil
+}
+
+// responseError is the json body returned from the LH api when an error occurs.
+type responseError struct {
+	Errors []responseErrorDetails `json:"error"`
+}
+
+type responseErrorDetails struct {
+	Type  int                `json:"type"`
+	Code  int                `json:"code"`
+	Text  string             `json:"text"`
+	Args  responseErrorParam `json:"args"`
+	Level int                `json:"int"`
+}
+
+type responseErrorParam struct {
+	Param string `json:"param"`
+}
+
+// parseErr gets the error returned from the API to provide some more detailed
+// information to the user. This will wrap the existing error with the extra
+// info.
+func parseErr(resp *http.Response, resErr error) error {
+	// If any errors occur, return the original (unwrapped) error.
+	raw, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return resErr
+	}
+
+	var ret responseError
+	err = json.Unmarshal(raw, &ret)
+	if err != nil {
+		return resErr
+	}
+
+	// Wrap the error with any text returned from the api.
+	for idx, er := range ret.Errors {
+		if idx == 0 {
+			resErr = fmt.Errorf("%s:\n\t%s.", resErr.Error(), er.Text)
+		} else {
+			resErr = fmt.Errorf("%s\n\t%s.", resErr.Error(), er.Text)
+		}
+	}
+	return resErr
 }
 
 // checkErr returns a friendly error message for the given status code.
