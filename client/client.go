@@ -21,7 +21,7 @@ var (
 
 const (
 	sessionURI = "/sessions"
-	version    = "/api/v1"
+	version    = "/api/v1.1"
 )
 
 // Client is an interface with the idea of wrapping an http.Client with extra
