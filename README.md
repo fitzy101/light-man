@@ -15,7 +15,8 @@ shell - gives you a pmshell connection on the lighthouse.
 
 All username and password fields will default to root & default respectively if there were not specified in the command. If you try to run any commands before configuring light-man you'll be prompted to run configure first. This only needs to happen once if the lighthouse URL stays the same.
 
-Latest version v0.1.2.
+Latest version v0.1.3.
+*NOTE:* Version v0.1.3 and above only support Lighthouse version 5.1.1. Use lower versions for earlier Lighthouse releases.
 
 # Building light-man
 Clone the git repo. Navigate to the repo, and run `make`. Copy the binary to somewhere in your $PATH. 
