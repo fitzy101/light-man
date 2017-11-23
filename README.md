@@ -9,6 +9,7 @@ configure - setup light-man with your lighthouse credentials. These are saved to
 list - print out information to do with all nodes connected to the lighthouse.
 add - add a node.
 delete - delete a node.
+delete-all - delete all nodes.
 shell - gives you a pmshell connection on the lighthouse.
 ```
 
@@ -57,6 +58,8 @@ Usage: light-man -c [COMMAND] [OPTIONS]...
                 -g: the name of a smartgroup to filter the list command
         delete: delete a node from the Lighthouse
                 -i: the identifier for a node - find with the list command
+        delete-all: delete all nodes from the Lighthouse
+		-g: the name of a smartgroup to filter the command
         shell: get a port manager shell on the Lighthouse
 ```
 
@@ -80,10 +83,20 @@ lighthouse_configuration:
 List
 ```
 $ light-man -c list
-ID      Name    Model           Status          LHVPN.Address   FW.Version      Conn.Status     Errors
-nodes-1 acm7004 ACM7004-5-LMR   Enrolled        192.168.128.2   devbuild        connected
-nodes-2 cm7148  CM7148-2-DAC    Enrolled        192.168.128.3   devbuild        connected
-nodes-3 cm7196  CM7196A-2-DAC   Enrolled        192.168.128.4   devbuild        connected
+ID              Name            Model           Status          LHVPN.Address   FW.Version      Conn.Status     Errors
+nodes-2         im7208-2-dac-lr IM7208-2-DAC-LR Enrolled        192.168.128.2   devbuild        connected
+nodes-3         cm7148-2        CM7148-2        Enrolled        192.168.128.3   devbuild        connected
+nodes-6         acm5508-2       ACM5508-2       Enrolled        192.168.128.6   devbuild        connected
+nodes-8         imx4208         IMX4208         Enrolled        192.168.128.8   devbuild        connected
+nodes-9         nodes-9         CM7196A-2       Enrolled        192.168.128.4   CI-1180         connected
+nodes-10        nodes-10        ACM7004-5-LMR   Enrolled        192.168.128.5   4.1.0           connected
+```
+
+List (filtered by a smart group)
+```
+ID              Name            Model           Status          LHVPN.Address   FW.Version      Conn.Status     Errors
+nodes-9         nodes-9         CM7196A-2       Enrolled        192.168.128.4   CI-1180         connected
+nodes-10        nodes-10        ACM7004-5-LMR   Enrolled        192.168.128.5   4.1.0           connected
 ```
 
 Add
@@ -103,6 +116,19 @@ Delete
 $ light-man -c delete -i nodes-6
 Node deletion process started
 ```
+
+Delete All
+```
+$ light-man -c delete-all
+Node deletion process started for 4 node(s)
+```
+
+Delete All (filtered by a smart group)
+```
+$ light-man -c delete-all -g not-devbuild
+Node deletion process started for 2 node(s)
+```
+
 
 Shell
 ```

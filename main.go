@@ -2,7 +2,7 @@
 // via cli, utilising the REST API. Currently implemented are:
 // add, delete, list, and shell.
 //
-// Written with go 1.8, however would probably run on earlier versions.
+// Written with go 1.9, however would probably run on earlier versions.
 // To compile, navigate to the source folder and type 'make'. You'll need to
 // install the dependencies with `go get ./...`.
 package main
@@ -24,6 +24,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/fitzy101/light-man/client"
+	"github.com/fitzy101/light-man/types"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -58,7 +59,7 @@ const (
 	dbundle     = "name of the enrollment bundle"
 	dauto       = "indicates the node should NOT be auto-approved on enrollment"
 	did         = "the identifier for a node - find with the list command"
-	dsmartgroup = "the name of a smartgroup to filter the list command"
+	dsmartgroup = "the name of a smartgroup to filter the command"
 
 	yamlSpace  = "  "
 	configfile = ".oglh"
@@ -107,6 +108,10 @@ func usage() string {
 	// delete
 	sbuff.WriteString("\tdelete: delete a node from the Lighthouse\n")
 	sbuff.WriteString(fmt.Sprintf("\t\t-i: %s\n", did))
+
+	// delete-all
+	sbuff.WriteString("\tdelete-all: delete all nodes from the Lighthouse\n")
+	sbuff.WriteString(fmt.Sprintf("\t\t-g: %s\n", dsmartgroup))
 
 	// shell
 	sbuff.WriteString("\tshell: get a port manager shell on the Lighthouse\n")
@@ -184,6 +189,15 @@ func runCommand(command string) (string, error) {
 			return msg, err
 		}
 		msg, err := getShell()
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "delete-all":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := deleteAllNodes()
 		if err != nil {
 			return msg, err
 		}
@@ -339,23 +353,9 @@ func exitErr(err string) {
 // the user.
 func addNode(address, username, password, name, bundle string, approve bool) (string, error) {
 	var ret string
-	type NodeEnrollmentBody struct {
-		Name        string `json:"name"`
-		Address     string `json:"address"`
-		Username    string `json:"username"`
-		Password    string `json:"password"`
-		Bundle      string `json:"bundle,omitempty"`
-		Token       string `json:"token,omitempty"`
-		Hostname    string `json:"hostname,omitempty"`
-		AutoApprove bool   `json:"auto_approve"`
-		CallHome    bool   `json:"call_home"`
-	}
-	type EnrollmentRequest struct {
-		Enrollment NodeEnrollmentBody `json:"enrollment"`
-	}
 
 	// Build the request body.
-	enrolBody := NodeEnrollmentBody{
+	enrolBody := types.NodeEnrollmentBody{
 		Address:     address,
 		Name:        name,
 		Username:    username,
@@ -368,7 +368,7 @@ func addNode(address, username, password, name, bundle string, approve bool) (st
 		enrolBody.Hostname = name
 		enrolBody.CallHome = true
 	}
-	request := EnrollmentRequest{
+	request := types.EnrollmentRequest{
 		Enrollment: enrolBody,
 	}
 	reqJSON, err := json.Marshal(&request)
@@ -380,7 +380,6 @@ func addNode(address, username, password, name, bundle string, approve bool) (st
 		return ret, err
 	}
 
-	// Make the POST request.
 	req, err := client.BuildReq(&reqJSON, url, http.MethodPost, true)
 	rawResp, err := client.HttpClient().Do(req)
 	if err != nil {
@@ -394,28 +393,9 @@ func addNode(address, username, password, name, bundle string, approve bool) (st
 	return "Node added successfully\n", nil
 }
 
-// listNodes retrieves information for all nodes on the lighthouse.
-func listNodes() (string, error) {
-	var ret string
-	type NodeRuntimeStatus struct {
-		ActionErr        string `json:"action_error_message"`
-		ActionType       string `json:"action_type"`
-		ConnectionStatus string `json:"connection_status"`
-	}
-	type NodesListBody struct {
-		LHVPNAddress  string            `json:"lhvpn_address"`
-		ID            string            `json:"id"`
-		Status        string            `json:"status"`
-		MacAddress    string            `json:"mac_address"`
-		Model         string            `json:"model"`
-		SerialNumber  string            `json:"serial_number"`
-		Name          string            `json:"name"`
-		Version       string            `json:"firmware_version"`
-		RuntimeStatus NodeRuntimeStatus `json:"runtime_status"`
-	}
-	type NodesListResponse struct {
-		Nodes []NodesListBody `json:"nodes"`
-	}
+// getAllNodes retrieves information for all nodes on the lighthouse.
+func getAllNodes() (types.NodesListResponse, error) {
+	var ret types.NodesListResponse
 
 	// If a smartgroup name was specified, we need to perform a search first
 	// and append it onto the URI.
@@ -441,7 +421,6 @@ func listNodes() (string, error) {
 		}
 	}
 
-	// Make the request
 	req, err := client.BuildReq(nil, url, http.MethodGet, true)
 	rawResp, err := client.HttpClient().Do(req)
 	if err != nil {
@@ -453,20 +432,31 @@ func listNodes() (string, error) {
 	}
 
 	// Decode the response.
-	var b NodesListResponse
-	err = json.Unmarshal(body, &b)
+	err = json.Unmarshal(body, &ret)
+	if err != nil {
+		return ret, err
+	}
+
+	return ret, nil
+}
+
+// listNodes returns a formatted output of a list of all nodes on the lighthouse.
+func listNodes() (string, error) {
+	var ret string
+
+	list, err := getAllNodes()
 	if err != nil {
 		return ret, err
 	}
 
 	// Prettify the response for output.
-	if len(b.Nodes) == 0 {
+	if len(list.Nodes) == 0 {
 		ret = "No nodes to list\n"
 		return ret, nil
 	}
 	var out bytes.Buffer
 	out.WriteString("ID\tName\tModel\tStatus\tLHVPN.Address\tFW.Version\tConn.Status\tErrors\n")
-	for _, v := range b.Nodes {
+	for _, v := range list.Nodes {
 		out.WriteString(fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			v.ID,
 			v.Name,
@@ -486,7 +476,6 @@ func listNodes() (string, error) {
 func deleteNode() (string, error) {
 	var ret string
 
-	// Make the request.
 	uri := fmt.Sprintf("%s/%s", nodeURI, id)
 	url, err := client.GetURL(uri)
 	if err != nil {
@@ -507,6 +496,47 @@ func deleteNode() (string, error) {
 	}
 	ret = "Node deletion process started\n"
 
+	return ret, nil
+}
+
+// deleteAllNodes attempts to delete all nodes enrolled in lighthouse.
+func deleteAllNodes() (string, error) {
+	var ret string
+
+	// First we need all nodes, so we can get their id.
+	list, err := getAllNodes()
+	if err != nil {
+		return ret, err
+	}
+
+	if len(list.Nodes) == 0 {
+		ret = "No nodes to delete\n"
+		return ret, nil
+	}
+
+	// Go through the list and delete all the nodes.
+	for _, v := range list.Nodes {
+		uri := fmt.Sprintf("%s/%s", nodeURI, v.ID)
+		url, err := client.GetURL(uri)
+		if err != nil {
+			return ret, err
+		}
+		req, err := client.BuildReq(nil, url, http.MethodDelete, true)
+		rawResp, err := client.HttpClient().Do(req)
+		if err != nil {
+			return ret, err
+		}
+		if _, err := client.ParseReq(rawResp); err != nil {
+			return ret, err
+		}
+
+		// Confirm the node was deleted.
+		if rawResp.StatusCode != 204 {
+			return ret, fmt.Errorf("Node %s was not able to be deleted", v.ID)
+		}
+	}
+
+	ret = fmt.Sprintf("Node deletion process started for %v node(s)\n", len(list.Nodes))
 	return ret, nil
 }
 
@@ -590,15 +620,6 @@ func getSearchID() (string, error) {
 	// need to enumerate them all to find the one we want.
 	var ret string
 
-	type SmartgroupListBody struct {
-		ID    string `json:"id"`
-		Name  string `json:"name"`
-		Query string `json:"query"`
-	}
-	type NodesSmartgroupResponse struct {
-		Smartgroups []SmartgroupListBody `json:"smartgroups"`
-	}
-
 	// Fetch all of the smart groups.
 	url, err := client.GetURL(sgURI)
 	if err != nil {
@@ -613,7 +634,7 @@ func getSearchID() (string, error) {
 	if err != nil {
 		return ret, err
 	}
-	var b NodesSmartgroupResponse
+	var b types.NodesSmartgroupResponse
 	err = json.Unmarshal(body, &b)
 	if err != nil {
 		return ret, err
@@ -631,12 +652,6 @@ func getSearchID() (string, error) {
 	}
 
 	// Finally we can get a searchID.
-	type SearchBody struct {
-		ID string `json:"id"`
-	}
-	type SearchResponse struct {
-		SearchIDs SearchBody `json:"search"`
-	}
 	param := client.Parameters{
 		Name:  "json",
 		Value: query,
@@ -656,7 +671,7 @@ func getSearchID() (string, error) {
 		return ret, err
 	}
 
-	var bsearch SearchResponse
+	var bsearch types.SearchResponse
 	err = json.Unmarshal(body, &bsearch)
 	if err != nil {
 		return ret, err
