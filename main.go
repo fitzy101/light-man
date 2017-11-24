@@ -8,7 +8,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -18,12 +17,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"os/user"
 	"regexp"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/fitzy101/light-man/client"
+	"github.com/fitzy101/light-man/conf"
 	"github.com/fitzy101/light-man/types"
 	"golang.org/x/crypto/ssh"
 )
@@ -33,6 +32,7 @@ var (
 	lhaddress  string
 	lhusername string
 	lhpassword string
+	lhtoken    string
 
 	// Console Server vars.
 	address    string
@@ -41,12 +41,12 @@ var (
 	name       string
 	bundle     string
 	noauto     bool
+	log        bool
 	id         string
 	smartgroup string
 
 	// Housekeeping vars.
-	command   string
-	authToken string
+	command string
 )
 
 const (
@@ -60,12 +60,11 @@ const (
 	dauto       = "indicates the node should NOT be auto-approved on enrollment"
 	did         = "the identifier for a node - find with the list command"
 	dsmartgroup = "the name of a smartgroup to filter the command"
+	dlog        = "enable request logging to stdout"
 
-	yamlSpace  = "  "
-	configfile = ".oglh"
-	nodeURI    = "/nodes"
-	searchURI  = "/search/nodes"
-	sgURI      = "/nodes/smartgroups"
+	nodeURI   = "/nodes"
+	searchURI = "/search/nodes"
+	sgURI     = "/nodes/smartgroups"
 
 	sshPort = 22
 	sshConn = "tcp"
@@ -81,6 +80,7 @@ func init() {
 	flag.StringVar(&id, "i", "", did)
 	flag.StringVar(&smartgroup, "g", "", dsmartgroup)
 	flag.BoolVar(&noauto, "no", false, dauto)
+	flag.BoolVar(&log, "log", false, dlog)
 }
 
 func usage() string {
@@ -148,11 +148,21 @@ func main() {
 }
 
 func runCommand(command string) (string, error) {
+	if log {
+		client.LogLevel = client.LOGINFO
+	}
 	var msg string
 	switch command {
 	case "configure":
-		lhaddress = address
-		msg, err := configure(address, username, password)
+		client.LhAddress = address
+		client.LhUsername = username
+		client.LhPassword = password
+		token, err := client.GetToken()
+		if err != nil {
+			return msg, err
+		}
+
+		msg, err := configure(address, username, password, token)
 		if err != nil {
 			return msg, err
 		}
@@ -251,88 +261,33 @@ func validate() error {
 	return nil
 }
 
-// getConfigdir returns the filepath to the light-man configuration file.
-func getConfigdir() (string, error) {
-	user, err := user.Current()
-	if err != nil {
-		return "", err
-	}
-	config := fmt.Sprintf("%s/%s", user.HomeDir, configfile)
-	return config, nil
-}
-
 // configure sets up the light-man configuration file.
-func configure(address, username, password string) (string, error) {
+func configure(address, username, password, token string) (string, error) {
 	var ret string
-	configdir, err := getConfigdir()
+	configdir, err := conf.WriteConfig(address, username, password, token)
 	if err != nil {
 		return ret, err
 	}
 
-	file, err := os.Create(configdir)
-	defer file.Close()
-	if err != nil {
-		return ret, err
-	}
-
-	var fbuff bytes.Buffer
-
-	// We're using YAML for the configuration here.
-	fbuff.WriteString(fmt.Sprintf("lighthouse_configuration:\n"))
-	fbuff.WriteString(fmt.Sprintf("%slighthouse: %s\n", yamlSpace, address))
-	fbuff.WriteString(fmt.Sprintf("%suser: %s\n", yamlSpace, username))
-	fbuff.WriteString(fmt.Sprintf("%spassword: %s\n", yamlSpace, password))
-	_, wErr := file.WriteString(fbuff.String())
-	if wErr != nil {
-		return ret, wErr
-	}
 	ret = fmt.Sprintf("config saved to %s\n", configdir)
 	return ret, nil
 }
 
-// loadConfiguration looks for the config file on disk, and loads the information
-// if a file was found.
 func loadConfiguration() error {
-	configdir, err := getConfigdir()
+	add, user, pass, token, err := conf.LoadConfiguration()
 	if err != nil {
 		return err
-	}
-
-	// Return friendly err if file doesnt exist
-	if _, err := os.Stat(configdir); os.IsNotExist(err) {
-		return errors.New("No config found, try running the 'configure' command first")
-	}
-
-	file, err := os.Open(configdir)
-	defer file.Close()
-	if err != nil {
-		return err
-	}
-
-	// Read the address, user, and password from the configuration file.
-	lh := fmt.Sprintf("%slighthouse:", yamlSpace)
-	user := fmt.Sprintf("%suser:", yamlSpace)
-	password := fmt.Sprintf("%spassword:", yamlSpace)
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.Contains(line, lh) {
-			fields := strings.Split(line, ": ")
-			lhaddress = fields[1]
-		} else if strings.Contains(line, user) {
-			fields := strings.Split(line, ": ")
-			lhusername = fields[1]
-		} else if strings.Contains(line, password) {
-			fields := strings.Split(line, ": ")
-			lhpassword = fields[1]
-		}
 	}
 
 	// Setup the client package with the user data.
+	lhaddress = add
+	lhusername = user
+	lhpassword = pass
+	lhtoken = token
 	client.LhAddress = lhaddress
 	client.LhUsername = lhusername
 	client.LhPassword = lhpassword
-
+	client.LhToken = lhtoken
 	return nil
 }
 

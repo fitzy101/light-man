@@ -147,7 +147,6 @@ Connect to port > ^CShell session completed
 
 ## TODO
 - Implement 'approve' to approve a node.
-- Persist session tokens until they've timed out.
 - Add support for third party nodes in the add command.
  
 ## Known issues

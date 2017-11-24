@@ -16,12 +16,19 @@ var (
 	LhAddress  string
 	LhUsername string
 	LhPassword string
-	authToken  string
+	LhToken    string
+	LogLevel   int
 )
 
 const (
 	sessionURI = "/sessions"
 	version    = "/api/v1.1"
+)
+
+const (
+	LOGDEBUG = iota
+	LOGINFO
+	LOGERROR
 )
 
 // Client is an interface with the idea of wrapping an http.Client with extra
@@ -86,25 +93,24 @@ func IgnoreTlsErr() Decorator {
 	}
 }
 
-//// Retry authorization if the endpoint returns Unauthorized - this might happen
-//// if out saved session token has expired.
-//func RetryAuth() Decorator {
-//	return func(c Client) Client {
-//		return ClientFunc(func(r *http.Request) (*http.Response, error) {
-//			if res, err := c.Do(r); res.StatusCode == http.StatusUnauthorized {
-//				// Get another token, this one has expired.
-//			}
-//			return c.Do(r)
-//		})
-//	}
-//}
+func WriteLog() Decorator {
+	return func(c Client) Client {
+		return ClientFunc(func(r *http.Request) (*http.Response, error) {
+			// Log the request to stdout.
+			if LogLevel == LOGINFO {
+				fmt.Printf("METHOD: %s REQUEST: %s\n", r.Method, r.URL)
+			}
+			return c.Do(r)
+		})
+	}
+}
 
 // HttpClient returns a decorated http client.
 func HttpClient() Client {
 	return Decorate(http.DefaultClient,
-		// RetryAuth() - to implement
 		IgnoreTlsErr(),
 		Retry(5, time.Second),
+		WriteLog(),
 	)
 }
 
@@ -137,9 +143,9 @@ func GetURL(uri string, params ...Parameters) (string, error) {
 	return ret, nil
 }
 
-// getToken logs into the lighthouse instance and creates an Auth token for
+// GetToken logs into the lighthouse instance and creates an Auth token for
 // subsequent requests.
-func getToken() (string, error) {
+func GetToken() (string, error) {
 	var ret string
 	type AuthReq struct {
 		Username string `json:"username"`
@@ -195,6 +201,30 @@ func getToken() (string, error) {
 	return ret, nil
 }
 
+// CheckToken checks if a token is still valid with the lighthouse instance.
+// Returns true if it's invalid.
+func CheckToken() (bool, error) {
+	var ret bool
+
+	url, err := GetURL(sessionURI)
+	if err != nil {
+		return ret, err
+	}
+	url = fmt.Sprintf("%s/%s", url, LhToken)
+
+	req, err := BuildReq(nil, url, http.MethodGet, false)
+	if err != nil {
+		return ret, err
+	}
+
+	resp, err := HttpClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusUnauthorized, nil
+}
+
 // BuildReq is a wrapper around the http.NewRequest function that ensures
 // authenticated requests have the expected auth headers, and any http client
 // has the fault tolerance etc added to it.
@@ -211,14 +241,6 @@ func BuildReq(body *[]byte, url string, method string, auth bool) (*http.Request
 		return nil, err
 	}
 	if auth {
-		// We need a token before setting the headers.
-		if authToken == "" {
-			token, err := getToken()
-			if err != nil {
-				return nil, err
-			}
-			authToken = token
-		}
 		setAuthHeaders(req)
 	}
 	req.Close = true
@@ -227,7 +249,7 @@ func BuildReq(body *[]byte, url string, method string, auth bool) (*http.Request
 
 // setAuthHeaders adds the headers for a given request.
 func setAuthHeaders(r *http.Request) {
-	r.Header.Set("Authorization", fmt.Sprintf("Token %s", authToken))
+	r.Header.Set("Authorization", fmt.Sprintf("Token %s", LhToken))
 	r.Header.Set("Content-Type", "application/json")
 	return
 }
