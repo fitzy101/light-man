@@ -252,11 +252,6 @@ func validate() error {
 				address = address[:aL-1]
 			}
 		}
-		if command == "add" {
-			if name == "" {
-				return errors.New("name (-n) must be provided")
-			}
-		}
 	}
 	return nil
 }
