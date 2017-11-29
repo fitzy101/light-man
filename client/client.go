@@ -222,7 +222,7 @@ func CheckToken() (bool, error) {
 		return ret, err
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusUnauthorized, nil
+	return resp.StatusCode != http.StatusOK, nil
 }
 
 // BuildReq is a wrapper around the http.NewRequest function that ensures

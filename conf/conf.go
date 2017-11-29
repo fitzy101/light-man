@@ -105,22 +105,13 @@ func LoadConfiguration() (string, string, string, string, error) {
 	client.LhUsername = lhusername
 	client.LhPassword = lhpassword
 	client.LhAddress = lhaddress
-	if !checkToken() {
-		lhtoken, err = getToken()
+	if invalid, _ := client.CheckToken(); invalid {
+		lhtoken, err = client.GetToken()
+		client.LhToken = lhtoken
 
 		// Write the new token to config.
 		WriteConfig(lhaddress, lhusername, lhpassword, lhtoken)
 	}
 
 	return lhaddress, lhusername, lhpassword, lhtoken, err
-}
-
-func getToken() (string, error) {
-	token, err := client.GetToken()
-	return token, err
-}
-
-func checkToken() bool {
-	invalid, _ := client.CheckToken()
-	return !invalid
 }
