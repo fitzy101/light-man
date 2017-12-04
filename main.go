@@ -331,7 +331,7 @@ func addNode(address, username, password, name, bundle string, approve bool) (st
 	}
 
 	req, err := client.BuildReq(&reqJSON, url, http.MethodPost, true)
-	rawResp, err := client.HttpClient().Do(req)
+	rawResp, err := client.HTTPClient().Do(req)
 	if err != nil {
 		return ret, err
 	}
@@ -372,7 +372,7 @@ func getAllNodes() (types.NodesListResponse, error) {
 	}
 
 	req, err := client.BuildReq(nil, url, http.MethodGet, true)
-	rawResp, err := client.HttpClient().Do(req)
+	rawResp, err := client.HTTPClient().Do(req)
 	if err != nil {
 		return ret, err
 	}
@@ -432,7 +432,7 @@ func deleteNode() (string, error) {
 		return ret, err
 	}
 	req, err := client.BuildReq(nil, url, http.MethodDelete, true)
-	rawResp, err := client.HttpClient().Do(req)
+	rawResp, err := client.HTTPClient().Do(req)
 	if err != nil {
 		return ret, err
 	}
@@ -472,7 +472,7 @@ func deleteAllNodes() (string, error) {
 			return ret, err
 		}
 		req, err := client.BuildReq(nil, url, http.MethodDelete, true)
-		rawResp, err := client.HttpClient().Do(req)
+		rawResp, err := client.HTTPClient().Do(req)
 		if err != nil {
 			return ret, err
 		}
@@ -576,7 +576,7 @@ func getSearchID() (string, error) {
 		return ret, err
 	}
 	req, err := client.BuildReq(nil, url, http.MethodGet, true)
-	rawResp, err := client.HttpClient().Do(req)
+	rawResp, err := client.HTTPClient().Do(req)
 	if err != nil {
 		return ret, err
 	}
@@ -612,7 +612,7 @@ func getSearchID() (string, error) {
 	}
 
 	req, err = client.BuildReq(nil, url, http.MethodGet, true)
-	rawResp, err = client.HttpClient().Do(req)
+	rawResp, err = client.HTTPClient().Do(req)
 	if err != nil {
 		return ret, err
 	}

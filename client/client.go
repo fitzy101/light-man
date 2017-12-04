@@ -12,12 +12,13 @@ import (
 	"time"
 )
 
+// All variables are retrieved from the config file and set in main routine.
 var (
-	LhAddress  string
-	LhUsername string
-	LhPassword string
-	LhToken    string
-	LogLevel   int
+	LhAddress  string // LhAddress: The address of Lighthouse instance (FQDN or IP)
+	LhUsername string // LhUsername: The username for auth.
+	LhPassword string // LhPassword: The password for auth.
+	LhToken    string // LhToken: The auth token.
+	LogLevel   int    // LogLevel: The loglevel, for request logging.
 )
 
 const (
@@ -25,6 +26,7 @@ const (
 	version    = "/api/v1.1"
 )
 
+// Constants for the request log level. Currently ignored if not LOGINFO.
 const (
 	LOGDEBUG = iota
 	LOGINFO
@@ -41,11 +43,11 @@ type Client interface {
 // Inspired by Tomas Senart (https://www.youtube.com/watch?v=xyDkyFjzFVc)
 type Decorator func(Client) Client
 
-// ClientFunc is the implementation of the Client interface.
-type ClientFunc func(*http.Request) (*http.Response, error)
+// Func is the implementation of the Client interface.
+type Func func(*http.Request) (*http.Response, error)
 
 // Do performs the http request.
-func (f ClientFunc) Do(r *http.Request) (*http.Response, error) {
+func (f Func) Do(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
 
@@ -62,7 +64,7 @@ func Decorate(c Client, d ...Decorator) Client {
 // gradually increasing the retry wait time the more failed attempts.
 func Retry(attempts int, backoff time.Duration) Decorator {
 	return func(c Client) Client {
-		return ClientFunc(func(r *http.Request) (res *http.Response, err error) {
+		return Func(func(r *http.Request) (res *http.Response, err error) {
 			for i := 0; i <= attempts; i++ {
 				if res, err = c.Do(r); err == nil {
 					break
@@ -75,9 +77,9 @@ func Retry(attempts int, backoff time.Duration) Decorator {
 	}
 }
 
-// IgnoreTlsErr is a that will prevent http client certificate errors when
+// IgnoreTLSErr is a that will prevent http client certificate errors when
 // making an http request with a self-signed cert.
-func IgnoreTlsErr() Decorator {
+func IgnoreTLSErr() Decorator {
 	return func(c Client) Client {
 		// Ignore client certificate errors.
 		if httpClient, ok := c.(*http.Client); ok {
@@ -87,15 +89,17 @@ func IgnoreTlsErr() Decorator {
 				},
 			}
 		}
-		return ClientFunc(func(r *http.Request) (*http.Response, error) {
+		return Func(func(r *http.Request) (*http.Response, error) {
 			return c.Do(r)
 		})
 	}
 }
 
+// WriteLog will print basic information for the current request.
+// TODO: Improve logging capabilities.
 func WriteLog() Decorator {
 	return func(c Client) Client {
-		return ClientFunc(func(r *http.Request) (*http.Response, error) {
+		return Func(func(r *http.Request) (*http.Response, error) {
 			// Log the request to stdout.
 			if LogLevel == LOGINFO {
 				fmt.Printf("METHOD: %s REQUEST: %s\n", r.Method, r.URL)
@@ -105,10 +109,10 @@ func WriteLog() Decorator {
 	}
 }
 
-// HttpClient returns a decorated http client.
-func HttpClient() Client {
+// HTTPClient returns a decorated http client.
+func HTTPClient() Client {
 	return Decorate(http.DefaultClient,
-		IgnoreTlsErr(),
+		IgnoreTLSErr(),
 		Retry(5, time.Second),
 		WriteLog(),
 	)
@@ -169,7 +173,7 @@ func GetToken() (string, error) {
 		return ret, err
 	}
 
-	rawResp, err := HttpClient().Do(req)
+	rawResp, err := HTTPClient().Do(req)
 	if err != nil {
 		return ret, err
 	}
@@ -217,7 +221,7 @@ func CheckToken() (bool, error) {
 		return ret, err
 	}
 
-	resp, err := HttpClient().Do(req)
+	resp, err := HTTPClient().Do(req)
 	if err != nil {
 		return ret, err
 	}
@@ -307,9 +311,9 @@ func parseErr(resp *http.Response, resErr error) error {
 	// Wrap the error with any text returned from the api.
 	for idx, er := range ret.Errors {
 		if idx == 0 {
-			resErr = fmt.Errorf("%s:\n\t%s.", resErr.Error(), er.Text)
+			resErr = fmt.Errorf("%s:\n\t%s", resErr.Error(), er.Text)
 		} else {
-			resErr = fmt.Errorf("%s\n\t%s.", resErr.Error(), er.Text)
+			resErr = fmt.Errorf("%s\n\t%s", resErr.Error(), er.Text)
 		}
 	}
 	return resErr
