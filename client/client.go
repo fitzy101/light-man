@@ -101,7 +101,7 @@ func NoRedirect() Decorator {
 	return func(c Client) Client {
 		// Ignore any http redirects.
 		if httpClient, ok := c.(*http.Client); ok {
-			httpClient.CheckRedirect = func(req *http.Request, via []*http.Response) error {
+			httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
 			}
 		}

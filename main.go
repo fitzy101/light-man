@@ -224,7 +224,7 @@ func runCommand(command string) (string, error) {
 		}
 		return msg, nil
 	case "script":
-		return "success", nil
+		return "success\n", nil
 	default:
 		return msg, fmt.Errorf("%s is not a valid command", command)
 	}
@@ -663,4 +663,8 @@ func getSearchID() (string, error) {
 	ret = bsearch.SearchIDs.ID
 
 	return ret, nil
+}
+
+func sendScript() (string, error) {
+
 }
