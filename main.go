@@ -44,6 +44,7 @@ var (
 	log        bool
 	id         string
 	smartgroup string
+	scriptpath string
 
 	// Housekeeping vars.
 	command string
@@ -61,10 +62,12 @@ const (
 	did         = "the identifier for a node - find with the list command"
 	dsmartgroup = "the name of a smartgroup to filter the command"
 	dlog        = "enable request logging to stdout"
+	dscript     = "filepath to the script to execute on a node"
 
 	nodeURI   = "/nodes"
 	searchURI = "/search/nodes"
 	sgURI     = "/nodes/smartgroups"
+	scriptURI = "/scripts"
 
 	sshPort = 22
 	sshConn = "tcp"
@@ -79,6 +82,7 @@ func init() {
 	flag.StringVar(&bundle, "b", "", dbundle)
 	flag.StringVar(&id, "i", "", did)
 	flag.StringVar(&smartgroup, "g", "", dsmartgroup)
+	flag.StringVar(&scriptpath, "f", "", dscript)
 	flag.BoolVar(&noauto, "no", false, dauto)
 	flag.BoolVar(&log, "log", false, dlog)
 }
@@ -115,6 +119,13 @@ func usage() string {
 
 	// shell
 	sbuff.WriteString("\tshell: get a port manager shell on the Lighthouse\n")
+
+	// script
+	sbuff.WriteString("\tscript: send a script to be executed on node(s). Provide either -i or -g.\n")
+	sbuff.WriteString(fmt.Sprintf("\t\t-i: %s\n", did))
+	sbuff.WriteString(fmt.Sprintf("\t\t-g: %s\n", dsmartgroup))
+	sbuff.WriteString(fmt.Sprintf("\t\t-f: %s\n", dscript))
+
 	return sbuff.String()
 }
 
@@ -212,6 +223,8 @@ func runCommand(command string) (string, error) {
 			return msg, err
 		}
 		return msg, nil
+	case "script":
+		return "success", nil
 	default:
 		return msg, fmt.Errorf("%s is not a valid command", command)
 	}
@@ -253,6 +266,27 @@ func validate() error {
 			}
 		}
 	}
+
+	// ID or smartgroup required for script
+	if command == "script" {
+		if id == "" && smartgroup == "" {
+			return errors.New("either id or smartgroup must be provided")
+		} else if id != "" && smartgroup != "" {
+			return errors.New("either id or smartgroup must be provided")
+		}
+
+		// validate the script file
+		if scriptpath == "" {
+			return errors.New("a filepath must be provided for a script")
+		}
+
+		file, err := os.OpenFile(scriptpath, os.O_RDONLY, 0444)
+		defer file.Close()
+		if os.IsNotExist(err) {
+			return errors.New("the filepath must exist and be readable")
+		}
+	}
+
 	return nil
 }
 

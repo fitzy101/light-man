@@ -95,6 +95,22 @@ func IgnoreTLSErr() Decorator {
 	}
 }
 
+// NoRedirect will stop the http client from following any redirects during a
+// http request.
+func NoRedirect() Decorator {
+	return func(c Client) Client {
+		// Ignore any http redirects.
+		if httpClient, ok := c.(*http.Client); ok {
+			httpClient.CheckRedirect = func(req *http.Request, via []*http.Response) error {
+				return http.ErrUseLastResponse
+			}
+		}
+		return Func(func(r *http.Request) (*http.Response, error) {
+			return c.Do(r)
+		})
+	}
+}
+
 // WriteLog will print basic information for the current request.
 // TODO: Improve logging capabilities.
 func WriteLog() Decorator {
