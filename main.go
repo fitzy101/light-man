@@ -14,9 +14,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"text/tabwriter"
@@ -224,7 +227,14 @@ func runCommand(command string) (string, error) {
 		}
 		return msg, nil
 	case "script":
-		return "success\n", nil
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := sendScript()
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
 	default:
 		return msg, fmt.Errorf("%s is not a valid command", command)
 	}
@@ -666,5 +676,52 @@ func getSearchID() (string, error) {
 }
 
 func sendScript() (string, error) {
+	var ret string
 
+	// If a node was specified, we can send the script straight away.
+	// Otherwise we're dealing with a smartgroup.
+	nodeIDs := []string{}
+	if smartgroup != "" {
+		list := getAllNodes()
+		for node := range list.Nodes {
+			nodeIDs = append(nodeIDs, node.ID)
+		}
+	} else {
+		nodeIds = append(nodeIDs, nodeID)
+	}
+
+	// Hold a copy of the file in memory so we don't need to keep reading it
+	// from disk, we'll just copy it for each request.
+	fileb, err := ioutil.ReadFile(scriptpath)
+	if err != nil {
+		return ret, errors.New("error reading file, %s", err.Error())
+	}
+
+	failures := 0
+	failErrs := []error{}
+	for nodeID := range nodeIDs {
+		// We'll be sending the script to each node in the list, separately.
+		body := &bytes.Buffer{}
+		wr := multipart.NewWriter(body)
+		part, err := wr.CreateFormFile("name", filepath.Base(scriptname))
+		if err != nil {
+			return ret, errors.New("error reading file, %s", err.Error())
+		}
+		_, err := io.Copy(part, bytes.NewReader(fileb))
+
+		// We'll be sending the script to each node in the list, separately.
+		req, err := client.BuildReq(nil, url, http.MethodPost, true)
+		rawResp, err := client.HTTPClient().Do(req)
+		if err != nil {
+			failErrs = append(failErrs, err)
+			failures++
+			continue
+		}
+
+		_, err = client.ParseReq(rawResp)
+		if err != nil {
+			failErrs = append(failErrs, err)
+			failures++
+		}
+	}
 }

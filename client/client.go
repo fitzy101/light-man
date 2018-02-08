@@ -131,6 +131,7 @@ func HTTPClient() Client {
 		IgnoreTLSErr(),
 		Retry(5, time.Second),
 		WriteLog(),
+		NoRedirect(),
 	)
 }
 
@@ -254,6 +255,7 @@ func BuildReq(body *[]byte, url string, method string, auth bool) (*http.Request
 	if body != nil {
 		bod := bytes.NewBuffer(*body)
 		req, err = http.NewRequest(method, url, bod)
+		setContentTypeHeaders(req, "application/json")
 	} else {
 		req, err = http.NewRequest(method, url, nil)
 	}
@@ -270,7 +272,12 @@ func BuildReq(body *[]byte, url string, method string, auth bool) (*http.Request
 // setAuthHeaders adds the headers for a given request.
 func setAuthHeaders(r *http.Request) {
 	r.Header.Set("Authorization", fmt.Sprintf("Token %s", LhToken))
-	r.Header.Set("Content-Type", "application/json")
+	return
+}
+
+// setContentTypeHeaders adds the headers for a given request.
+func setContentTypeHeaders(r *http.Request, ct string) {
+	r.Header.Set("Content-Type", ct)
 	return
 }
 
