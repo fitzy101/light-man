@@ -44,6 +44,7 @@ var (
 	log        bool
 	id         string
 	smartgroup string
+	token      string
 
 	// Housekeeping vars.
 	command string
@@ -57,6 +58,7 @@ const (
 	dpassword   = "password for the Lighthouse user (default is 'default')"
 	dname       = "name of the node to add"
 	dbundle     = "name of the enrollment bundle"
+	dtoken      = "the bundle authentication token"
 	dauto       = "indicates the node should NOT be auto-approved on enrollment"
 	did         = "the identifier for a node - find with the list command"
 	dsmartgroup = "the name of a smartgroup to filter the command"
@@ -77,6 +79,7 @@ func init() {
 	flag.StringVar(&password, "p", "default", dpassword)
 	flag.StringVar(&name, "n", "", dname)
 	flag.StringVar(&bundle, "b", "", dbundle)
+	flag.StringVar(&token, "t", "", dtoken)
 	flag.StringVar(&id, "i", "", did)
 	flag.StringVar(&smartgroup, "g", "", dsmartgroup)
 	flag.BoolVar(&noauto, "no", false, dauto)
@@ -100,6 +103,8 @@ func usage() string {
 	sbuff.WriteString(fmt.Sprintf("\t\t-p: %s\n", dpassword))
 	sbuff.WriteString(fmt.Sprintf("\t\t-n: %s\n", dname))
 	sbuff.WriteString(fmt.Sprintf("\t\t-no: %s\n", dauto))
+	sbuff.WriteString(fmt.Sprintf("\t\t-b: %s\n", dbundle))
+	sbuff.WriteString(fmt.Sprintf("\t\t-t: %s\n", dtoken))
 
 	// list
 	sbuff.WriteString("\tlist: list all nodes on the Lighthouse\n")
@@ -171,7 +176,7 @@ func runCommand(command string) (string, error) {
 		if err := loadConfiguration(); err != nil {
 			return msg, err
 		}
-		msg, err := addNode(address, username, password, name, bundle, noauto)
+		msg, err := addNode(address, username, password, name, bundle, noauto, token)
 		if err != nil {
 			return msg, err
 		}
@@ -252,7 +257,15 @@ func validate() error {
 				address = address[:aL-1]
 			}
 		}
+
+		// Bundle requires a token.
+		if command == "add" && bundle != "" {
+			if token == "" {
+				return errors.New("enrolment with a bundle requires a token")
+			}
+		}
 	}
+
 	return nil
 }
 
@@ -301,7 +314,7 @@ func exitErr(err string) {
 // addNode makes a POST request to the lighthouse including all of the new
 // node information. This formats any error/response message to be friendly for
 // the user.
-func addNode(address, username, password, name, bundle string, approve bool) (string, error) {
+func addNode(address, username, password, name, bundle string, approve bool, token string) (string, error) {
 	var ret string
 
 	// Build the request body.
@@ -316,7 +329,7 @@ func addNode(address, username, password, name, bundle string, approve bool) (st
 	if bundle != "" {
 		enrolBody.Bundle = bundle
 		enrolBody.Hostname = name
-		enrolBody.CallHome = true
+		enrolBody.Token = token
 	}
 	request := types.EnrollmentRequest{
 		Enrollment: enrolBody,
@@ -442,7 +455,7 @@ func deleteNode() (string, error) {
 
 	// Confirm the node was deleted.
 	if rawResp.StatusCode != 204 {
-		return ret, errors.New("Node was not able to be deleted")
+		return ret, errors.New("node was not able to be deleted")
 	}
 	ret = "Node deletion process started\n"
 
