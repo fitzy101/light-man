@@ -23,7 +23,7 @@ var (
 
 const (
 	sessionURI = "/sessions"
-	version    = "/api/v1.1"
+	version    = "/api/v3.0"
 )
 
 // Constants for the request log level. Currently ignored if not LOGINFO.

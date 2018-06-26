@@ -45,12 +45,14 @@ var (
 	id         string
 	smartgroup string
 	hostname   string
+	time       string
 	timezone   string
 	timeout    int
 	token      string
 	port       int
 	apiport    int
 	vpnport    int
+	enabled    bool
 
 	// Housekeeping vars.
 	command string
@@ -69,15 +71,18 @@ const (
 	dsmartgroup = "the name of a smartgroup to filter the command"
 	dlog        = "enable request logging to stdout"
 	dhostname   = "the new hostname"
+	dtime       = "the time to set"
 	dtimezone   = "the new timezone"
 	dtimeout    = "the timeout value"
 	dtoken      = "the enrollment token"
 	dport       = "tcp port to use for ssh"
+	denabled    = "whether this feature should be enabled"
 
 	nodeURI     = "/nodes"
 	searchURI   = "/search/nodes"
 	sgURI       = "/nodes/smartgroups"
 	hostnameURI = "/system/hostname"
+	timeURI     = "/system/time"
 	timezoneURI = "/system/timezone"
 	cliSessionTimeoutURI = "/system/cli_session_timeout"
 	webuiSessionTimeoutURI = "/system/webui_session_timeout"
@@ -86,6 +91,8 @@ const (
 	defaultAddressURI = "/system/os_default_address"
 	sshPortURI = "/system/ssh_port"
 	endpointURI = "/system/external_endpoints"
+	versionURI = "/system/version"
+	alternateApiURI = "/system/alternate_api"
 
 	sshPort = 22
 	sshConn = "tcp"
@@ -94,6 +101,7 @@ const (
 func init() {
 	flag.StringVar(&command, "c", "", dcommand)
 	flag.StringVar(&hostname, "hostname", "", dhostname)
+	flag.StringVar(&time, "time", "", dtime)
 	flag.StringVar(&timezone, "timezone", "", dtimezone)
 	flag.StringVar(&token, "token", "", dtoken)
 	flag.IntVar(&timeout, "timeout", 0, dtimeout)
@@ -103,6 +111,7 @@ func init() {
 	flag.StringVar(&id, "i", "", did)
 	flag.StringVar(&smartgroup, "g", "", dsmartgroup)
 	flag.BoolVar(&noauto, "no", false, dauto)
+	flag.BoolVar(&enabled, "enabled", false, denabled)
 	flag.StringVar(&address, "a", "", daddress)
 	flag.StringVar(&username, "u", "root", dusername)
 	flag.StringVar(&password, "p", "default", dpassword)
@@ -145,6 +154,10 @@ func usage() string {
 	// set hostname
 	sbuff.WriteString("\thostname: set the system hostname\n")
 	sbuff.WriteString(fmt.Sprintf("\t\t--hostname: %s\n", dhostname))
+
+	// set time
+	sbuff.WriteString("\ttime: set the system time\n")
+	sbuff.WriteString(fmt.Sprintf("\t\t--time: %s\n", dtime))
 
 	// set timezone
 	sbuff.WriteString("\ttimezone: set the system timezone\n")
@@ -289,6 +302,15 @@ func runCommand(command string) (string, error) {
 			return msg, err
 		}
 		return msg, nil
+	case "time":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := setTime(time)
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
 	case "timezone":
 		if err := loadConfiguration(); err != nil {
 			return msg, err
@@ -303,6 +325,24 @@ func runCommand(command string) (string, error) {
 			return msg, err
 		}
 		msg, err := getManifest()
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "alternate-api":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := setAlternateApi(enabled)
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "version":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := getVersion()
 		if err != nil {
 			return msg, err
 		}
@@ -505,6 +545,85 @@ func setHostname (newName string) (string, error) {
 	return fmt.Sprintf("Hostname: %s\n", hostname), nil
 }
 
+func setTime (newTime string) (string, error) {
+	var ret string
+
+	reqBody := types.SystemTimeBody{
+		Time: newTime,
+	}
+
+	request := types.SystemTimeRequest{
+		Time: reqBody,
+	}
+
+	reqJSON, err := json.Marshal(&request)
+	if err != nil {
+		return ret, err
+	}
+	url, err := client.GetURL(timeURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(&reqJSON, url, http.MethodPut, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	var response types.SystemTimeResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return ret, err
+	}
+	time := response.Time.Time
+
+	return fmt.Sprintf("Time: %s\n", time), nil
+}
+
+func setAlternateApi (newValue bool) (string, error) {
+	var ret string
+
+	reqBody := types.AlternateApiBody{
+		Enabled: newValue,
+	}
+
+	request := types.AlternateApiRequest{
+		AlternateApi: reqBody,
+	}
+
+	reqJSON, err := json.Marshal(&request)
+	if err != nil {
+		return ret, err
+	}
+	url, err := client.GetURL(alternateApiURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(&reqJSON, url, http.MethodPut, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	var response types.AlternateApiResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return ret, err
+	}
+
+	return fmt.Sprintf("Alternate API: %t\n", response.AlternateApi.Enabled), nil
+}
+
 func setTimezone (newName string) (string, error) {
 	var ret string
 
@@ -571,6 +690,33 @@ func getManifest () (string, error) {
 	manifest := response.Manifest.URL
 
 	return fmt.Sprintf("Manifest URL: %s\n", manifest), nil
+}
+
+func getVersion () (string, error) {
+	var ret string
+
+	url, err := client.GetURL(versionURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(nil, url, http.MethodGet, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	var response types.VersionResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return ret, err
+	}
+
+	return fmt.Sprintf("Firmware Version: %s\nAPI Version: %s\n", response.Version.Firmware, response.Version.Api), nil
 }
 
 func getDefaultAddress () (string, error) {

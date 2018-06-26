@@ -1,5 +1,40 @@
 package types
 
+type HttpsBody struct {
+	ValidFrom string `json:"valid_from"`
+	ValidTo string `json:"valid_to"`
+	Certificate string `json:"cert"`
+	Key string `json:"key"`
+	CommonName string `json:"common_name"`
+	State string `json:"state"`
+	Locality string `json:"locality"`
+	OrgUnit string `json:"org_unit"`
+	Email string `json:"email"`
+	Organization string `json:"organization"`
+	KeyLength int `json:"key_length"`
+}
+
+type AlternateApiBody struct {
+	Enabled bool `json:"enabled"`
+}
+
+type AlternateApiRequest struct {
+	AlternateApi AlternateApiBody `json:"system_alternate_api"`
+}
+
+type AlternateApiResponse struct {
+	AlternateApi AlternateApiBody `json:"system_alternate_api"`
+}
+
+type VersionBody struct {
+	Firmware string `json:"firmware_version"`
+	Api string `json:"rest_api_version"`
+}
+
+type VersionResponse struct {
+	Version VersionBody `json:"system_version"`
+}
+
 type EndpointBody struct {
 	ID string `json:"id"`
 	VpnPort int `json:"vpn_port"`
@@ -19,6 +54,17 @@ type EndpointRequest struct {
 	Endpoint EndpointBody `json:"systemExternalEndpoint"`
 }
 
+type SystemTimeBody struct {
+	Time string `json:"time"`
+}
+
+type SystemTimeRequest struct {
+	Time SystemTimeBody `json:"time"`
+}
+
+type SystemTimeResponse struct {
+	Time SystemTimeBody `json:"time"`
+}
 
 type SystemTimezoneBody struct {
 	Timezone string `json:"timezone"`
