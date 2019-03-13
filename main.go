@@ -21,9 +21,9 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/fitzy101/light-man/client"
-	"github.com/fitzy101/light-man/conf"
-	"github.com/fitzy101/light-man/types"
+	"github.com/zedar82/light-man/client"
+	"github.com/zedar82/light-man/conf"
+	"github.com/zedar82/light-man/types"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -44,7 +44,15 @@ var (
 	log        bool
 	id         string
 	smartgroup string
+	hostname   string
+	time       string
+	timezone   string
+	timeout    int
 	token      string
+	port       int
+	apiport    int
+	vpnport    int
+	enabled    bool
 
 	// Housekeeping vars.
 	command string
@@ -58,15 +66,33 @@ const (
 	dpassword   = "password for the Lighthouse user (default is 'default')"
 	dname       = "name of the node to add"
 	dbundle     = "name of the enrollment bundle"
-	dtoken      = "the bundle authentication token"
 	dauto       = "indicates the node should NOT be auto-approved on enrollment"
 	did         = "the identifier for a node - find with the list command"
 	dsmartgroup = "the name of a smartgroup to filter the command"
 	dlog        = "enable request logging to stdout"
+	dhostname   = "the new hostname"
+	dtime       = "the time to set"
+	dtimezone   = "the new timezone"
+	dtimeout    = "the timeout value"
+	dtoken      = "the enrollment token"
+	dport       = "tcp port to use for ssh"
+	denabled    = "whether this feature should be enabled"
 
-	nodeURI   = "/nodes"
-	searchURI = "/search/nodes"
-	sgURI     = "/nodes/smartgroups"
+	nodeURI     = "/nodes"
+	searchURI   = "/search/nodes"
+	sgURI       = "/nodes/smartgroups"
+	hostnameURI = "/system/hostname"
+	timeURI     = "/system/time"
+	timezoneURI = "/system/timezone"
+	cliSessionTimeoutURI = "/system/cli_session_timeout"
+	webuiSessionTimeoutURI = "/system/webui_session_timeout"
+	enrollmentTokenURI = "/system/global_enrollment_token"
+	manifestURI = "/system/manifest_link"
+	defaultAddressURI = "/system/os_default_address"
+	sshPortURI = "/system/ssh_port"
+	endpointURI = "/system/external_endpoints"
+	versionURI = "/system/version"
+	alternateApiURI = "/system/alternate_api"
 
 	sshPort = 22
 	sshConn = "tcp"
@@ -74,16 +100,25 @@ const (
 
 func init() {
 	flag.StringVar(&command, "c", "", dcommand)
-	flag.StringVar(&address, "a", "", daddress)
-	flag.StringVar(&username, "u", "root", dusername)
-	flag.StringVar(&password, "p", "default", dpassword)
+	flag.StringVar(&hostname, "hostname", "", dhostname)
+	flag.StringVar(&time, "time", "", dtime)
+	flag.StringVar(&timezone, "timezone", "", dtimezone)
+	flag.StringVar(&token, "token", "", dtoken)
+	flag.IntVar(&timeout, "timeout", 0, dtimeout)
+	flag.IntVar(&port, "port", 22, dport)
 	flag.StringVar(&name, "n", "", dname)
 	flag.StringVar(&bundle, "b", "", dbundle)
-	flag.StringVar(&token, "t", "", dtoken)
 	flag.StringVar(&id, "i", "", did)
 	flag.StringVar(&smartgroup, "g", "", dsmartgroup)
 	flag.BoolVar(&noauto, "no", false, dauto)
+	flag.BoolVar(&enabled, "enabled", false, denabled)
+	flag.StringVar(&address, "a", "", daddress)
+	flag.StringVar(&username, "u", "root", dusername)
+	flag.StringVar(&password, "p", "default", dpassword)
 	flag.BoolVar(&log, "log", false, dlog)
+	flag.IntVar(&apiport, "apiport", 0, dport)
+	flag.IntVar(&vpnport, "vpnport", 0, dport)
+
 }
 
 func usage() string {
@@ -103,8 +138,6 @@ func usage() string {
 	sbuff.WriteString(fmt.Sprintf("\t\t-p: %s\n", dpassword))
 	sbuff.WriteString(fmt.Sprintf("\t\t-n: %s\n", dname))
 	sbuff.WriteString(fmt.Sprintf("\t\t-no: %s\n", dauto))
-	sbuff.WriteString(fmt.Sprintf("\t\t-b: %s\n", dbundle))
-	sbuff.WriteString(fmt.Sprintf("\t\t-t: %s\n", dtoken))
 
 	// list
 	sbuff.WriteString("\tlist: list all nodes on the Lighthouse\n")
@@ -117,6 +150,40 @@ func usage() string {
 	// delete-all
 	sbuff.WriteString("\tdelete-all: delete all nodes from the Lighthouse\n")
 	sbuff.WriteString(fmt.Sprintf("\t\t-g: %s\n", dsmartgroup))
+
+	// set hostname
+	sbuff.WriteString("\thostname: set the system hostname\n")
+	sbuff.WriteString(fmt.Sprintf("\t\t--hostname: %s\n", dhostname))
+
+	// set time
+	sbuff.WriteString("\ttime: set the system time\n")
+	sbuff.WriteString(fmt.Sprintf("\t\t--time: %s\n", dtime))
+
+	// set timezone
+	sbuff.WriteString("\ttimezone: set the system timezone\n")
+	sbuff.WriteString(fmt.Sprintf("\t\t--timezone: %s\n", dtimezone))
+
+	// set token
+	sbuff.WriteString("\thostname: set the global enrollment token\n")
+	sbuff.WriteString(fmt.Sprintf("\t\t--token: %s\n", dtoken))
+
+	// set cli timeout
+	sbuff.WriteString("\tcli-timeout: set the command line timeout\n")
+	sbuff.WriteString(fmt.Sprintf("\t\t--timeout: %s\n", dtimeout))
+
+	// set cli timeout
+	sbuff.WriteString("\twebui-timeout: set the webui timeout\n")
+	sbuff.WriteString(fmt.Sprintf("\t\t--timeout: %s\n", dtimeout))
+
+	// set ssh port
+	sbuff.WriteString("\tssh-port: set the tcp port to use for ssh connections\n")
+	sbuff.WriteString(fmt.Sprintf("\t\t--port: %s\n", dport))
+
+	// get manifest link
+	sbuff.WriteString("\tmanifest: get a link to the global manifest file\n")
+
+	// get manifest link
+	sbuff.WriteString("\tdefault-address: get the default access address for the Lighthouse\n")
 
 	// shell
 	sbuff.WriteString("\tshell: get a port manager shell on the Lighthouse\n")
@@ -176,7 +243,7 @@ func runCommand(command string) (string, error) {
 		if err := loadConfiguration(); err != nil {
 			return msg, err
 		}
-		msg, err := addNode(address, username, password, name, bundle, noauto, token)
+		msg, err := addNode(address, username, password, name, bundle, noauto)
 		if err != nil {
 			return msg, err
 		}
@@ -186,6 +253,141 @@ func runCommand(command string) (string, error) {
 			return msg, err
 		}
 		msg, err := listNodes()
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "endpoint-list":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := listEndpoints()
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "endpoint-create":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := createEndpoint(address, apiport, vpnport)
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "endpoint-update":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := updateEndpoint(id, address, apiport, vpnport)
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "endpoint-delete":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := deleteEndpoint(id)
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "hostname":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := setHostname(hostname)
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "time":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := setTime(time)
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "timezone":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := setTimezone(timezone)
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "manifest":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := getManifest()
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "alternate-api":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := setAlternateApi(enabled)
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "version":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := getVersion()
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "default-address":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := getDefaultAddress()
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "token":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := setToken(token)
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "ssh-port":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := setSshPort(port)
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "cli-timeout":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := setCliTimeout(timeout)
+		if err != nil {
+			return msg, err
+		}
+		return msg, nil
+	case "webui-timeout":
+		if err := loadConfiguration(); err != nil {
+			return msg, err
+		}
+		msg, err := setWebuiTimeout(timeout)
 		if err != nil {
 			return msg, err
 		}
@@ -257,15 +459,7 @@ func validate() error {
 				address = address[:aL-1]
 			}
 		}
-
-		// Bundle requires a token.
-		if command == "add" && bundle != "" {
-			if token == "" {
-				return errors.New("enrolment with a bundle requires a token")
-			}
-		}
 	}
-
 	return nil
 }
 
@@ -311,10 +505,412 @@ func exitErr(err string) {
 	os.Exit(1)
 }
 
+func setHostname (newName string) (string, error) {
+	var ret string
+
+	reqBody := types.SystemHostnameBody{
+		Hostname: newName,
+	}
+
+	request := types.SystemHostnameRequest{
+		SystemHostname: reqBody,
+	}
+
+	reqJSON, err := json.Marshal(&request)
+	if err != nil {
+		return ret, err
+	}
+	url, err := client.GetURL(hostnameURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(&reqJSON, url, http.MethodPut, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	var response types.SystemHostnameResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return ret, err
+	}
+	hostname := response.SystemHostname.Hostname
+
+	return fmt.Sprintf("Hostname: %s\n", hostname), nil
+}
+
+func setTime (newTime string) (string, error) {
+	var ret string
+
+	reqBody := types.SystemTimeBody{
+		Time: newTime,
+	}
+
+	request := types.SystemTimeRequest{
+		Time: reqBody,
+	}
+
+	reqJSON, err := json.Marshal(&request)
+	if err != nil {
+		return ret, err
+	}
+	url, err := client.GetURL(timeURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(&reqJSON, url, http.MethodPut, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	var response types.SystemTimeResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return ret, err
+	}
+	time := response.Time.Time
+
+	return fmt.Sprintf("Time: %s\n", time), nil
+}
+
+func setAlternateApi (newValue bool) (string, error) {
+	var ret string
+
+	reqBody := types.AlternateApiBody{
+		Enabled: newValue,
+	}
+
+	request := types.AlternateApiRequest{
+		AlternateApi: reqBody,
+	}
+
+	reqJSON, err := json.Marshal(&request)
+	if err != nil {
+		return ret, err
+	}
+	url, err := client.GetURL(alternateApiURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(&reqJSON, url, http.MethodPut, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	var response types.AlternateApiResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return ret, err
+	}
+
+	return fmt.Sprintf("Alternate API: %t\n", response.AlternateApi.Enabled), nil
+}
+
+func setTimezone (newName string) (string, error) {
+	var ret string
+
+	reqBody := types.SystemTimezoneBody{
+		Timezone: newName,
+	}
+
+	request := types.SystemTimezoneRequest{
+		SystemTimezone: reqBody,
+	}
+
+	reqJSON, err := json.Marshal(&request)
+	if err != nil {
+		return ret, err
+	}
+	url, err := client.GetURL(timezoneURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(&reqJSON, url, http.MethodPut, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	var response types.SystemTimezoneResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return ret, err
+	}
+	timezone := response.SystemTimezone.Timezone
+
+	return fmt.Sprintf("Timezone: %s\n", timezone), nil
+}
+
+func getManifest () (string, error) {
+	var ret string
+
+	url, err := client.GetURL(manifestURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(nil, url, http.MethodGet, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	var response types.ManifestResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return ret, err
+	}
+	manifest := response.Manifest.URL
+
+	return fmt.Sprintf("Manifest URL: %s\n", manifest), nil
+}
+
+func getVersion () (string, error) {
+	var ret string
+
+	url, err := client.GetURL(versionURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(nil, url, http.MethodGet, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	var response types.VersionResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return ret, err
+	}
+
+	return fmt.Sprintf("Firmware Version: %s\nAPI Version: %s\n", response.Version.Firmware, response.Version.Api), nil
+}
+
+func getDefaultAddress () (string, error) {
+	var ret string
+
+	url, err := client.GetURL(defaultAddressURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(nil, url, http.MethodGet, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	var response types.DefaultAddressResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return ret, err
+	}
+	address := response.DefaultAddress.Address
+
+	return fmt.Sprintf("Address: %s\n", address), nil
+}
+
+func setToken (newName string) (string, error) {
+	var ret string
+
+	reqBody := types.EnrollmentTokenBody{
+		Token: newName,
+	}
+
+	request := types.EnrollmentTokenRequest{
+		EnrollmentToken: reqBody,
+	}
+
+	reqJSON, err := json.Marshal(&request)
+	if err != nil {
+		return ret, err
+	}
+	url, err := client.GetURL(enrollmentTokenURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(&reqJSON, url, http.MethodPut, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	var response types.EnrollmentTokenResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return ret, err
+	}
+	token := response.EnrollmentToken.Token
+
+	return fmt.Sprintf("Token: %s\n", token), nil
+}
+
+func setCliTimeout (newTimeout int) (string, error) {
+	var ret string
+
+	reqBody := types.CliSessionTimeoutBody{
+		Timeout: newTimeout,
+	}
+
+	request := types.CliSessionTimeoutRequest{
+		CliSessionTimeout: reqBody,
+	}
+
+	reqJSON, err := json.Marshal(&request)
+	if err != nil {
+		return ret, err
+	}
+	url, err := client.GetURL(cliSessionTimeoutURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(&reqJSON, url, http.MethodPut, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	var response types.CliSessionTimeoutResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return ret, err
+	}
+	timeout := response.CliSessionTimeout.Timeout
+
+	return fmt.Sprintf("Timeout: %d\n", timeout), nil
+}
+
+func setSshPort (newPort int) (string, error) {
+	var ret string
+
+	reqBody := types.SshPortBody{
+		Port: newPort,
+	}
+
+	request := types.SshPortRequest{
+		SshPort: reqBody,
+	}
+
+	reqJSON, err := json.Marshal(&request)
+	if err != nil {
+		return ret, err
+	}
+	url, err := client.GetURL(sshPortURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(&reqJSON, url, http.MethodPut, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	var response types.SshPortResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return ret, err
+	}
+	port := response.SshPort.Port
+
+	return fmt.Sprintf("SSH Port: %d\n", port), nil
+}
+
+func setWebuiTimeout (newTimeout int) (string, error) {
+	var ret string
+
+	reqBody := types.WebuiSessionTimeoutBody{
+		Timeout: newTimeout,
+	}
+
+	request := types.WebuiSessionTimeoutRequest{
+		WebuiSessionTimeout: reqBody,
+	}
+
+	reqJSON, err := json.Marshal(&request)
+	if err != nil {
+		return ret, err
+	}
+	url, err := client.GetURL(webuiSessionTimeoutURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(&reqJSON, url, http.MethodPut, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	var response types.WebuiSessionTimeoutResponse
+	err = json.Unmarshal(body, &response)
+	if err != nil {
+		return ret, err
+	}
+	timeout := response.WebuiSessionTimeout.Timeout
+
+	return fmt.Sprintf("Timeout: %d\n", timeout), nil
+}
+
 // addNode makes a POST request to the lighthouse including all of the new
 // node information. This formats any error/response message to be friendly for
 // the user.
-func addNode(address, username, password, name, bundle string, approve bool, token string) (string, error) {
+func addNode(address, username, password, name, bundle string, approve bool) (string, error) {
 	var ret string
 
 	// Build the request body.
@@ -329,7 +925,7 @@ func addNode(address, username, password, name, bundle string, approve bool, tok
 	if bundle != "" {
 		enrolBody.Bundle = bundle
 		enrolBody.Hostname = name
-		enrolBody.Token = token
+		enrolBody.CallHome = true
 	}
 	request := types.EnrollmentRequest{
 		Enrollment: enrolBody,
@@ -403,6 +999,106 @@ func getAllNodes() (types.NodesListResponse, error) {
 	return ret, nil
 }
 
+func createEndpoint(newAddress string, newVpnPort int, newApiPort int) (string, error) {
+	var ret string
+
+	// Build the request body.
+	endpointBody := types.EndpointBody{
+		Address: newAddress,
+		VpnPort: newVpnPort,
+		ApiPort: newApiPort,
+	}
+	request := types.EndpointRequest{
+		Endpoint: endpointBody,
+	}
+	reqJSON, err := json.Marshal(&request)
+	if err != nil {
+		return ret, err
+	}
+	url, err := client.GetURL(endpointURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(&reqJSON, url, http.MethodPost, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	_, err = client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	return "Endpoint added successfully\n", nil
+}
+
+func updateEndpoint(endpointId string, newAddress string, newVpnPort int, newApiPort int) (string, error) {
+	var ret string
+	
+	uri := fmt.Sprintf("%s/%s", endpointURI, endpointId)
+
+	// Build the request body.
+	endpointBody := types.EndpointBody{
+		ID: endpointId,
+		Address: newAddress,
+		VpnPort: newVpnPort,
+		ApiPort: newApiPort,
+	}
+	request := types.EndpointRequest{
+		Endpoint: endpointBody,
+	}
+	reqJSON, err := json.Marshal(&request)
+	if err != nil {
+		return ret, err
+	}
+	url, err := client.GetURL(uri)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(&reqJSON, url, http.MethodPut, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	_, err = client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	return "Endpoint updated successfully\n", nil
+}
+
+
+// getAllEndpoints retrieves information for all external endpoints configured on the lighthouse.
+func getAllEndpoints() (types.EndpointListResponse, error) {
+	var ret types.EndpointListResponse
+
+	url, err := client.GetURL(endpointURI)
+	if err != nil {
+		return ret, err
+	}
+
+	req, err := client.BuildReq(nil, url, http.MethodGet, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	body, err := client.ParseReq(rawResp)
+	if err != nil {
+		return ret, err
+	}
+
+	// Decode the response.
+	err = json.Unmarshal(body, &ret)
+	if err != nil {
+		return ret, err
+	}
+
+	return ret, nil
+}
+
 // listNodes returns a formatted output of a list of all nodes on the lighthouse.
 func listNodes() (string, error) {
 	var ret string
@@ -435,6 +1131,61 @@ func listNodes() (string, error) {
 	return ret, err
 }
 
+// listNodes returns a formatted output of a list of all nodes on the lighthouse.
+func listEndpoints() (string, error) {
+	var ret string
+
+	list, err := getAllEndpoints()
+	if err != nil {
+		return ret, err
+	}
+
+	// Prettify the response for output.
+	if len(list.Endpoints) == 0 {
+		ret = "No endpoints to list\n"
+		return ret, nil
+	}
+	var out bytes.Buffer
+	out.WriteString("ID\tAddress\tVPN Port\tAPI Port\n")
+	for _, v := range list.Endpoints {
+		out.WriteString(fmt.Sprintf("%s\t%s\t%d\t%d\n",
+			v.ID,
+			v.Address,
+			v.VpnPort,
+			v.ApiPort,
+		))
+	}
+	ret = out.String()
+	return ret, err
+}
+
+// deleteNode attempts to delete the node provided with -i.
+func deleteEndpoint(endpointId string) (string, error) {
+	var ret string
+
+	uri := fmt.Sprintf("%s/%s", endpointURI, id)
+	url, err := client.GetURL(uri)
+	if err != nil {
+		return ret, err
+	}
+	req, err := client.BuildReq(nil, url, http.MethodDelete, true)
+	rawResp, err := client.HTTPClient().Do(req)
+	if err != nil {
+		return ret, err
+	}
+	if _, err := client.ParseReq(rawResp); err != nil {
+		return ret, err
+	}
+
+	// Confirm the node was deleted.
+	if rawResp.StatusCode != 204 {
+		return ret, errors.New("Endpoint was not able to be deleted")
+	}
+	ret = "Endpoint deleted\n"
+
+	return ret, nil
+}
+
 // deleteNode attempts to delete the node provided with -i.
 func deleteNode() (string, error) {
 	var ret string
@@ -455,7 +1206,7 @@ func deleteNode() (string, error) {
 
 	// Confirm the node was deleted.
 	if rawResp.StatusCode != 204 {
-		return ret, errors.New("node was not able to be deleted")
+		return ret, errors.New("Node was not able to be deleted")
 	}
 	ret = "Node deletion process started\n"
 
