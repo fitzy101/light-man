@@ -21,9 +21,10 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/zedar82/light-man/client"
-	"github.com/zedar82/light-man/conf"
-	"github.com/zedar82/light-man/types"
+	"github.com/fitzy101/light-man/client"
+	"github.com/fitzy101/light-man/conf"
+	"github.com/fitzy101/light-man/types"
+
 	"golang.org/x/crypto/ssh"
 )
 
@@ -78,21 +79,21 @@ const (
 	dport       = "tcp port to use for ssh"
 	denabled    = "whether this feature should be enabled"
 
-	nodeURI     = "/nodes"
-	searchURI   = "/search/nodes"
-	sgURI       = "/nodes/smartgroups"
-	hostnameURI = "/system/hostname"
-	timeURI     = "/system/time"
-	timezoneURI = "/system/timezone"
-	cliSessionTimeoutURI = "/system/cli_session_timeout"
+	nodeURI                = "/nodes"
+	searchURI              = "/search/nodes"
+	sgURI                  = "/nodes/smartgroups"
+	hostnameURI            = "/system/hostname"
+	timeURI                = "/system/time"
+	timezoneURI            = "/system/timezone"
+	cliSessionTimeoutURI   = "/system/cli_session_timeout"
 	webuiSessionTimeoutURI = "/system/webui_session_timeout"
-	enrollmentTokenURI = "/system/global_enrollment_token"
-	manifestURI = "/system/manifest_link"
-	defaultAddressURI = "/system/os_default_address"
-	sshPortURI = "/system/ssh_port"
-	endpointURI = "/system/external_endpoints"
-	versionURI = "/system/version"
-	alternateApiURI = "/system/alternate_api"
+	enrollmentTokenURI     = "/system/global_enrollment_token"
+	manifestURI            = "/system/manifest_link"
+	defaultAddressURI      = "/system/os_default_address"
+	sshPortURI             = "/system/ssh_port"
+	endpointURI            = "/system/external_endpoints"
+	versionURI             = "/system/version"
+	alternateApiURI        = "/system/alternate_api"
 
 	sshPort = 22
 	sshConn = "tcp"
@@ -505,7 +506,7 @@ func exitErr(err string) {
 	os.Exit(1)
 }
 
-func setHostname (newName string) (string, error) {
+func setHostname(newName string) (string, error) {
 	var ret string
 
 	reqBody := types.SystemHostnameBody{
@@ -545,7 +546,7 @@ func setHostname (newName string) (string, error) {
 	return fmt.Sprintf("Hostname: %s\n", hostname), nil
 }
 
-func setTime (newTime string) (string, error) {
+func setTime(newTime string) (string, error) {
 	var ret string
 
 	reqBody := types.SystemTimeBody{
@@ -585,7 +586,7 @@ func setTime (newTime string) (string, error) {
 	return fmt.Sprintf("Time: %s\n", time), nil
 }
 
-func setAlternateApi (newValue bool) (string, error) {
+func setAlternateApi(newValue bool) (string, error) {
 	var ret string
 
 	reqBody := types.AlternateApiBody{
@@ -624,7 +625,7 @@ func setAlternateApi (newValue bool) (string, error) {
 	return fmt.Sprintf("Alternate API: %t\n", response.AlternateApi.Enabled), nil
 }
 
-func setTimezone (newName string) (string, error) {
+func setTimezone(newName string) (string, error) {
 	var ret string
 
 	reqBody := types.SystemTimezoneBody{
@@ -664,7 +665,7 @@ func setTimezone (newName string) (string, error) {
 	return fmt.Sprintf("Timezone: %s\n", timezone), nil
 }
 
-func getManifest () (string, error) {
+func getManifest() (string, error) {
 	var ret string
 
 	url, err := client.GetURL(manifestURI)
@@ -692,7 +693,7 @@ func getManifest () (string, error) {
 	return fmt.Sprintf("Manifest URL: %s\n", manifest), nil
 }
 
-func getVersion () (string, error) {
+func getVersion() (string, error) {
 	var ret string
 
 	url, err := client.GetURL(versionURI)
@@ -719,7 +720,7 @@ func getVersion () (string, error) {
 	return fmt.Sprintf("Firmware Version: %s\nAPI Version: %s\n", response.Version.Firmware, response.Version.Api), nil
 }
 
-func getDefaultAddress () (string, error) {
+func getDefaultAddress() (string, error) {
 	var ret string
 
 	url, err := client.GetURL(defaultAddressURI)
@@ -747,7 +748,7 @@ func getDefaultAddress () (string, error) {
 	return fmt.Sprintf("Address: %s\n", address), nil
 }
 
-func setToken (newName string) (string, error) {
+func setToken(newName string) (string, error) {
 	var ret string
 
 	reqBody := types.EnrollmentTokenBody{
@@ -787,7 +788,7 @@ func setToken (newName string) (string, error) {
 	return fmt.Sprintf("Token: %s\n", token), nil
 }
 
-func setCliTimeout (newTimeout int) (string, error) {
+func setCliTimeout(newTimeout int) (string, error) {
 	var ret string
 
 	reqBody := types.CliSessionTimeoutBody{
@@ -827,7 +828,7 @@ func setCliTimeout (newTimeout int) (string, error) {
 	return fmt.Sprintf("Timeout: %d\n", timeout), nil
 }
 
-func setSshPort (newPort int) (string, error) {
+func setSshPort(newPort int) (string, error) {
 	var ret string
 
 	reqBody := types.SshPortBody{
@@ -867,7 +868,7 @@ func setSshPort (newPort int) (string, error) {
 	return fmt.Sprintf("SSH Port: %d\n", port), nil
 }
 
-func setWebuiTimeout (newTimeout int) (string, error) {
+func setWebuiTimeout(newTimeout int) (string, error) {
 	var ret string
 
 	reqBody := types.WebuiSessionTimeoutBody{
@@ -1035,12 +1036,12 @@ func createEndpoint(newAddress string, newVpnPort int, newApiPort int) (string, 
 
 func updateEndpoint(endpointId string, newAddress string, newVpnPort int, newApiPort int) (string, error) {
 	var ret string
-	
+
 	uri := fmt.Sprintf("%s/%s", endpointURI, endpointId)
 
 	// Build the request body.
 	endpointBody := types.EndpointBody{
-		ID: endpointId,
+		ID:      endpointId,
 		Address: newAddress,
 		VpnPort: newVpnPort,
 		ApiPort: newApiPort,
@@ -1069,7 +1070,6 @@ func updateEndpoint(endpointId string, newAddress string, newVpnPort int, newApi
 
 	return "Endpoint updated successfully\n", nil
 }
-
 
 // getAllEndpoints retrieves information for all external endpoints configured on the lighthouse.
 func getAllEndpoints() (types.EndpointListResponse, error) {
